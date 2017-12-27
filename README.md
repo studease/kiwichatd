@@ -10,7 +10,7 @@
 
 > QQ群：528109813
 
-This is a high-concurrency websocket chat server.
+This is a high-performance websocket chat server.
 
 
 ## Description
