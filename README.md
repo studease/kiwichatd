@@ -6,9 +6,9 @@
 
 > [[中文] http://blog.csdn.net/icysky1989/article/details/52138527](http://blog.csdn.net/icysky1989/article/details/52138527)
 
-> ![公众号: STUDEASE](http://studease.cn/images/favicon-32x32.png "公众号: STUDEASE")
+> 公众号: STUDEASE
 
-> ![QQ群: 528109813](http://studease.cn/images/favicon-32x32.png "QQ群: 528109813")
+> QQ群: 528109813
 
 This is a high-concurrency websocket chat server.
 
