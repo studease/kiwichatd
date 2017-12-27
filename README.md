@@ -1,14 +1,14 @@
-# kiwichatd
+ï»¿# kiwichatd
 
 > [[domain] http://studease.cn](http://studease.cn/kiwichatd.html)
 
 > [[source] https://github.com/studease/kiwichatd](https://github.com/studease/kiwichatd)
 
-- [[ÖĞÎÄ] http://blog.csdn.net/icysky1989/article/details/52138527](http://blog.csdn.net/icysky1989/article/details/52138527)
+- [[ä¸­æ–‡] http://blog.csdn.net/icysky1989/article/details/52138527](http://blog.csdn.net/icysky1989/article/details/52138527)
 
-- ¹«ÖÚºÅ: STUDEASE
+- å…¬ä¼—å·: STUDEASE
 
-- QQÈº: 528109813
+- QQç¾¤: 528109813
 
 This is a high-concurrency websocket chat server.
 
