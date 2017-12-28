@@ -19,8 +19,6 @@ typedef struct {
 stu_int32_t  kcd_message_init(kcd_message_t *m, stu_str_t * path, stu_str_t *id);
 
 off_t        kcd_message_push(kcd_message_t *m, u_char *data, size_t size);
-u_char      *kcd_message_read(kcd_message_t *m, u_char *buf, off_t *offset);
-
-off_t        kcd_message_get_last(kcd_message_t *m, stu_int32_t n);
+u_char      *kcd_message_read(kcd_message_t *m, u_char *dst, off_t *offset);
 
 #endif /* KIWICHATD_COM_CORE_KCD_MESSAGE_H_ */

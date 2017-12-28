@@ -17,7 +17,7 @@ static stu_int32_t  kcd_request_phase_handler(stu_websocket_request_t *r);
 static void         kcd_request_analyze_protocol(stu_websocket_request_t *r);
 static void         kcd_request_send_error(stu_websocket_request_t *r, stu_int32_t err, stu_double_t req);
 static stu_int32_t  kcd_request_send_ident(stu_connection_t *c);
-static stu_int32_t  kcd_request_send_cache(stu_connection_t *c, stu_int32_t n);
+static stu_int32_t  kcd_request_send_history(stu_connection_t *c, stu_int32_t n);
 
 static stu_int32_t  kcd_request_analyze_ident_upstream_response(stu_connection_t *pc);
 static void         kcd_request_finalize_ident_upstream_handler(stu_connection_t *c, stu_int32_t rc);
@@ -200,12 +200,16 @@ kcd_upgrade_preview_handler(stu_http_request_t *r) {
 		stu_atomic_test_set(&ch->state, stat);
 	}
 
+	if (ch->record && ch->message) {
+		user->history = user->current = ch->message->file.offset;
+	}
+
 	/* ident response */
 	if (kcd_request_send_ident(c) == STU_ERROR) {
 		kcd_close_connection(c);
 	}
 
-	kcd_request_send_cache(c, kcd_cycle->conf.push_history);
+	kcd_request_send_history(c, kcd_cycle->conf.push_history);
 
 done:
 
@@ -378,17 +382,17 @@ kcd_request_phase_handler(stu_websocket_request_t *r) {
 
 static void
 kcd_request_analyze_protocol(stu_websocket_request_t *r) {
-	stu_json_t            *ji, *ji_req, *ji_cmd, *ji_data, *ji_type, *ji_chan;
-	stu_json_t            *jo, *jo_req, *jo_raw, *jo_data, *jo_type, *jo_chan;
-	stu_json_t            *jo_user, *jo_uid, *jo_uname, *jo_uicon, *jo_urole;
+	stu_json_t            *ji, *ji_req, *ji_cmd, *ji_data, *ji_type, *ji_chan, *ji_user, *ji_uid;
+	stu_json_t            *jo, *jo_req, *jo_raw, *jo_data, *jo_type, *jo_chan, *jo_user, *jo_uid, *jo_uname, *jo_uicon, *jo_urole;
 	stu_connection_t      *c;
-	kcd_user_t            *user;
+	kcd_user_t            *user, *mate;
 	kcd_channel_t         *ch;
-	stu_str_t             *cmd;
+	stu_str_t             *cmd, *mid;
 	stu_websocket_frame_t *f;
 	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
 	struct timeval         tm;
-	stu_int32_t            sec, req;
+	stu_int32_t            sec, req, type, n;
+	stu_uint32_t           hk;
 	size_t                 size;
 
 	c = r->connection;
@@ -439,7 +443,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	ji_chan = stu_json_get_object_item_by(ji, &KCD_PROTOCOL_CHANNEL);
 	if (ji_cmd == NULL || ji_cmd->type != STU_JSON_TYPE_STRING
 			|| ji_data == NULL || ji_data->type != STU_JSON_TYPE_STRING
-			|| ji_type == NULL || ji_type->type != STU_JSON_TYPE_STRING
+			|| ji_type == NULL || ji_type->type != STU_JSON_TYPE_NUMBER
 			|| ji_chan == NULL || ji_chan->type != STU_JSON_TYPE_OBJECT) {
 		stu_log_error(0, "Failed to analyze kcd request: %s.", stu_http_status_text(STU_HTTP_BAD_REQUEST));
 		stu_json_delete(ji);
@@ -502,20 +506,78 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	f->payload_data.last = stu_websocket_encode_frame(f, f->payload_data.start);
 	f->payload_data.pos = f->payload_data.start;
 
-	stu_json_delete(ji);
-	stu_json_delete(jo);
-
-	/* broadcast message */
-	stu_mutex_lock(&ch->userlist.lock);
-
 	size = f->payload_data.last - f->payload_data.pos;
-	kcd_channel_broadcast(ch, f->payload_data.pos, size);
 
-	if (ch->record && ch->message) {
-		kcd_message_push(ch->message, f->payload_data.pos, size);
+	/* handle message */
+	switch ((type = *(stu_double_t *) ji_type->value)) {
+	case KCD_PROTOCOL_UNI:
+		ji_user = stu_json_get_object_item_by(ji, &KCD_PROTOCOL_USER);
+		if (ji_user == NULL || ji_user->type != STU_JSON_TYPE_OBJECT) {
+			stu_log_error(0, "Failed to analyze kcd request: %s.", stu_http_status_text(STU_HTTP_BAD_REQUEST));
+			kcd_request_send_error(r, STU_HTTP_BAD_REQUEST, req);
+			goto failed;
+		}
+
+		ji_uid = stu_json_get_object_item_by(ji_user, &KCD_PROTOCOL_ID);
+		if (ji_uid == NULL || ji_uid->type != STU_JSON_TYPE_STRING) {
+			stu_log_error(0, "Failed to analyze kcd request: %s.", stu_http_status_text(STU_HTTP_BAD_REQUEST));
+			kcd_request_send_error(r, STU_HTTP_BAD_REQUEST, req);
+			goto failed;
+		}
+
+		stu_mutex_lock(&ch->userlist.lock);
+
+		mid = (stu_str_t *) ji_uid->value;
+		hk = stu_hash_key(mid->data, mid->len, ch->userlist.flags);
+
+		mate = stu_hash_find_locked(&ch->userlist, hk, mid->data, mid->len);
+		if (mate == NULL) {
+			kcd_request_send_error(r, STU_HTTP_NOT_FOUND, req);
+		} else {
+			n = send(c->fd, f->payload_data.pos, size, 0);
+			if (n == -1) {
+				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mid->data, mate->connection->fd);
+			}
+
+			if (mate == user) {
+				goto uni_done;
+			}
+
+			n = send(mate->connection->fd, f->payload_data.pos, size, 0);
+			if (n == -1) {
+				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mid->data, mate->connection->fd);
+			}
+		}
+
+uni_done:
+
+		stu_mutex_unlock(&ch->userlist.lock);
+		break;
+
+	case KCD_PROTOCOL_MULTI:
+		stu_mutex_lock(&ch->userlist.lock);
+
+		kcd_channel_broadcast(ch, f->payload_data.pos, size);
+
+		if (ch->record && ch->message) {
+			kcd_message_push(ch->message, f->payload_data.pos, size);
+		}
+
+		stu_mutex_unlock(&ch->userlist.lock);
+		break;
+
+	case KCD_PROTOCOL_HISTORY:
+		kcd_request_send_history(c, kcd_cycle->conf.push_history);
+		break;
+
+	default:
+		break;
 	}
 
-	stu_mutex_unlock(&ch->userlist.lock);
+failed:
+
+	stu_json_delete(ji);
+	stu_json_delete(jo);
 }
 
 static void
@@ -610,21 +672,18 @@ kcd_request_send_ident(stu_connection_t *c) {
 }
 
 static stu_int32_t
-kcd_request_send_cache(stu_connection_t *c, stu_int32_t n) {
+kcd_request_send_history(stu_connection_t *c, stu_int32_t n) {
 	kcd_user_t    *user;
 	kcd_channel_t *ch;
 	u_char        *pos;
 	u_char         tmp[KCD_REQUEST_DEFAULT_SIZE];
-	off_t          offset;
 	stu_int32_t    v;
 
 	user = c->data;
 	ch = user->channel;
 
-	offset = kcd_message_get_last(ch->message, n);
-
 	for (/* void */; n > 0; n--) {
-		pos = kcd_message_read(ch->message, tmp, &offset);
+		pos = kcd_message_read(ch->message, tmp, &user->history);
 		if (pos == tmp) {
 			break;
 		}
@@ -634,8 +693,6 @@ kcd_request_send_cache(stu_connection_t *c, stu_int32_t n) {
 			//stu_log_error(stu_errno, "Failed to send cache: fd=%d.", fd);
 			break;
 		}
-
-		offset += 4;
 	}
 
 	return STU_OK;
@@ -801,7 +858,7 @@ kcd_request_analyze_ident_upstream_response(stu_connection_t *pc) {
 		goto failed;
 	}
 
-	kcd_request_send_cache(c, kcd_cycle->conf.push_history);
+	kcd_request_send_history(c, kcd_cycle->conf.push_history);
 
 	rc = STU_OK;
 

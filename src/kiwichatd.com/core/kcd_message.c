@@ -79,10 +79,13 @@ failed:
 }
 
 u_char *
-kcd_message_read(kcd_message_t *m, u_char *buf, off_t *offset) {
+kcd_message_read(kcd_message_t *m, u_char *dst, off_t *offset) {
+	stu_json_t   *ji, *ji_type;
 	u_char       *p;
+	off_t         off;
 	ssize_t       v;
 	size_t        size;
+	stu_int32_t   len;
 	stu_uint64_t  payload_len, i;
 	enum {
 		sw_payload_len = 0,
@@ -91,15 +94,32 @@ kcd_message_read(kcd_message_t *m, u_char *buf, off_t *offset) {
 		sw_payload_data
 	} state;
 
-	p = buf;
-	v = 0;
+	p = dst;
+	len = 0;
 	size = 2;
 	state = sw_payload_len;
 
 	stu_rwlock_rdlock(&m->lock);
 
+	/* read message length */
+	if (*offset < 4) {
+		goto failed;
+	}
+
+	*offset -= 4;
+
+	v = pread(m->file.fd, (u_char *) &len, 4, *offset);
+	if (v == -1) {
+		stu_log_error(stu_errno, "pread() \"%s\" failed.", m->file.name.data);
+		goto failed;
+	}
+
+	*offset -= len;
+	off = *offset;
+
+	/* read message data */
 	for ( ;; ) {
-		v = pread(m->file.fd, p, size, *offset);
+		v = pread(m->file.fd, p, size, off);
 		if (v == -1) {
 			stu_log_error(stu_errno, "pread() \"%s\" failed.", m->file.name.data);
 			goto failed;
@@ -129,14 +149,14 @@ kcd_message_read(kcd_message_t *m, u_char *buf, off_t *offset) {
 			}
 
 			p += 2;
-			*offset += 2;
+			off += 2;
 			break;
 
 		case sw_extended_2:
 			payload_len =  *p++ << 8;
 			payload_len |= *p++;
 
-			*offset += 2;
+			off += 2;
 			size = payload_len;
 			state = sw_payload_data;
 			break;
@@ -151,14 +171,31 @@ kcd_message_read(kcd_message_t *m, u_char *buf, off_t *offset) {
 			payload_len |= (i = *p++) <<  8;
 			payload_len |= *p++;
 
-			*offset += 8;
+			off += 8;
 			size = payload_len;
 			state = sw_payload_data;
 			break;
 
 		case sw_payload_data:
+			ji = stu_json_parse(p, payload_len);
+			if (ji == NULL || ji->type != STU_JSON_TYPE_OBJECT) {
+				stu_log_error(0, "Bad history message: %s.", p);
+				p = dst;
+				goto failed;
+			}
+
+			ji_type = stu_json_get_object_item_by(ji, &KCD_PROTOCOL_TYPE);
+			if (ji_type == NULL || ji_type->type != STU_JSON_TYPE_NUMBER) {
+				stu_log_error(0, "Bad history message: %s.", p);
+				p = dst;
+				goto failed;
+			}
+
+			*(stu_double_t *) ji_type->value = KCD_PROTOCOL_HISTORY;
+			stu_json_stringify(ji, p);
+
 			p += payload_len;
-			*offset += payload_len;
+			off += payload_len;
 			goto done;
 		}
 	}
@@ -169,40 +206,4 @@ done:
 	stu_rwlock_unlock(&m->lock);
 
 	return p;
-}
-
-
-off_t
-kcd_message_get_last(kcd_message_t *m, stu_int32_t n) {
-	off_t        offset;
-	ssize_t      v;
-	stu_int32_t  size;
-
-	size = 0;
-
-	stu_rwlock_rdlock(&m->lock);
-
-	offset = m->file.offset;
-
-	for (/* void */; n; n--) {
-		if (offset < 4) {
-			break;
-		}
-
-		offset -= 4;
-
-		v = pread(m->file.fd, (u_char *) &size, 4, offset);
-		if (v == -1) {
-			stu_log_error(stu_errno, "pread() \"%s\" failed.", m->file.name.data);
-			goto failed;
-		}
-
-		offset -= size;
-	}
-
-failed:
-
-	stu_rwlock_unlock(&m->lock);
-
-	return offset;
 }

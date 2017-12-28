@@ -211,10 +211,11 @@ kcd_channel_remove_exactly(kcd_channel_t *ch, kcd_user_t *user) {
 
 void
 kcd_channel_broadcast(kcd_channel_t *ch, u_char *buffer, size_t size) {
-	kcd_user_t            *user;
 	stu_list_elt_t        *elts;
 	stu_hash_elt_t        *e;
 	stu_queue_t           *q;
+	kcd_user_t            *user;
+	stu_connection_t      *c;
 	stu_socket_t           fd;
 	stu_int32_t            n;
 
@@ -225,12 +226,12 @@ kcd_channel_broadcast(kcd_channel_t *ch, u_char *buffer, size_t size) {
 	for (q = stu_queue_head(&elts->queue); q != NULL && q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
 		e = stu_queue_data(q, stu_hash_elt_t, queue);
 		user = (kcd_user_t *) e->value;
-		if (user->connection == NULL
-				|| user->connection->timedout || user->connection->error || user->connection->close || user->connection->destroyed) {
+		c = user->connection;
+		if (c == NULL || c->timedout || c->error || c->close || c->destroyed) {
 			continue;
 		}
 
-		fd = stu_atomic_fetch(&user->connection->fd);
+		fd = stu_atomic_fetch(&c->fd);
 
 		n = send(fd, buffer, size, 0);
 		if (n == -1) {

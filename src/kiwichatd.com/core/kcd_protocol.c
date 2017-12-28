@@ -25,6 +25,7 @@ stu_str_t  KCD_PROTOCOL_ERROR       = stu_string("error");
 stu_str_t  KCD_PROTOCOL_CODE        = stu_string("code");
 
 stu_str_t  KCD_PROTOCOL_CMD_TEXT    = stu_string("text");
+stu_str_t  KCD_PROTOCOL_CMD_HISTORY = stu_string("history");
 stu_str_t  KCD_PROTOCOL_CMD_MUTE    = stu_string("mute");
 stu_str_t  KCD_PROTOCOL_CMD_KICKOUT = stu_string("kickout");
 stu_str_t  KCD_PROTOCOL_CMD_EXTERN  = stu_string("extern");
@@ -33,6 +34,7 @@ stu_str_t  KCD_PROTOCOL_CMD_PONG    = stu_string("pong");
 
 stu_str_t  KCD_PROTOCOL_RAW_IDENT   = stu_string("ident");
 stu_str_t  KCD_PROTOCOL_RAW_TEXT    = stu_string("text");
+stu_str_t  KCD_PROTOCOL_RAW_HISTORY = stu_string("history");
 stu_str_t  KCD_PROTOCOL_RAW_JOIN    = stu_string("join");
 stu_str_t  KCD_PROTOCOL_RAW_LEFT    = stu_string("left");
 stu_str_t  KCD_PROTOCOL_RAW_USERS   = stu_string("users");
