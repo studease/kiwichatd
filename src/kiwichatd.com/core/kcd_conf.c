@@ -14,14 +14,19 @@ extern stu_hash_t   stu_upstreams;
 extern stu_str_t                  stu_http_root;
 extern stu_http_method_bitmask_t  stu_http_upstream_method_mask[];
 
+static kcd_edition_mask_t  kcd_edition_mask[] = {
+	{ stu_string("PREVIEW"), PREVIEW },
+	{ stu_string("ENTERPRISE"), ENTERPRISE },
+	{ stu_null_string, 0x00 }
+};
+
 static stu_str_t  KCD_CONF_DEFAULT_PID     = stu_string("chatd.pid");
 static stu_str_t  KCD_CONF_DEFAULT_RECORDS = stu_string("histories/%s.kcm");
 
 static stu_str_t  KCD_CONF_LOG = stu_string("log");
 static stu_str_t  KCD_CONF_PID = stu_string("pid");
 
-static stu_str_t  KCD_CONF_LICENSE  = stu_string("license");
-static stu_str_t  KCD_CONF_RESPONSE = stu_string("response");
+static stu_str_t  KCD_CONF_EDITION = stu_string("edition");
 
 static stu_str_t  KCD_CONF_MASTER_PROCESS   = stu_string("master_process");
 static stu_str_t  KCD_CONF_WORKER_PROCESSES = stu_string("worker_processes");
@@ -56,11 +61,12 @@ static stu_int32_t    kcd_conf_copy_upstream_servers(stu_list_t *list, stu_str_t
 
 stu_int32_t
 kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
-	stu_json_t   *root, *item, *sub;
-	stu_str_t    *v_string;
-	stu_double_t *v_double;
-	u_char        tmp[KCD_CONF_MAX_SIZE];
-	stu_file_t    file;
+	stu_json_t         *root, *item, *sub;
+	stu_str_t          *v_string;
+	stu_double_t       *v_double;
+	kcd_edition_mask_t *e;
+	u_char              tmp[KCD_CONF_MAX_SIZE];
+	stu_file_t          file;
 
 	stu_memzero(tmp, KCD_CONF_MAX_SIZE);
 
@@ -117,38 +123,18 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 		conf->pid.name.len = v_string->len;
 	}
 
-	// license
-	item = stu_json_get_object_item_by(root, &KCD_CONF_LICENSE);
-	if (item && item->type == STU_JSON_TYPE_STRING) {
-		v_string = (stu_str_t *) item->value;
-
-		conf->license.data = stu_calloc(v_string->len + 1);
-		if (conf->license.data == NULL) {
-			stu_log_error(0, "Failed to calloc pid name.");
-			goto failed;
-		}
-
-		stu_strncpy(conf->license.data, v_string->data, v_string->len);
-		conf->license.len = v_string->len;
-	}
-
-	// response
-	item = stu_json_get_object_item_by(root, &KCD_CONF_RESPONSE);
-	if (item && item->type == STU_JSON_TYPE_STRING) {
-		v_string = (stu_str_t *) item->value;
-
-		conf->response.data = stu_calloc(v_string->len + 1);
-		if (conf->response.data == NULL) {
-			stu_log_error(0, "Failed to calloc pid name.");
-			goto failed;
-		}
-
-		stu_strncpy(conf->response.data, v_string->data, v_string->len);
-		conf->response.len = v_string->len;
-	}
-
 	// edition
-	conf->edition = kcd_license_check(&conf->license, &conf->response);
+	item = stu_json_get_object_item_by(root, &KCD_CONF_EDITION);
+	if (item && item->type == STU_JSON_TYPE_STRING) {
+		v_string = (stu_str_t *) item->value;
+
+		for (e = kcd_edition_mask; e->name.len; e++) {
+			if (stu_strncasecmp(v_string->data, e->name.data, e->name.len) == 0) {
+				conf->edition = e->mask;
+				break;
+			}
+		}
+	}
 
 	// master_process
 	item = stu_json_get_object_item_by(root, &KCD_CONF_MASTER_PROCESS);
@@ -435,18 +421,6 @@ kcd_conf_get_default(kcd_conf_t *conf) {
 
 	// pid
 	conf->pid.name = KCD_CONF_DEFAULT_PID;
-
-	// license
-	conf->license.data = stu_calloc(KCD_LICENSE_LENGTH + 1);
-	if (conf->license.data == NULL) {
-		stu_log_error(0, "Failed to calloc license.");
-		return STU_ERROR;
-	}
-
-	conf->license.len = KCD_LICENSE_LENGTH;
-
-	// response
-	stu_str_null(&conf->response);
 
 	// edition
 	conf->edition = PREVIEW;

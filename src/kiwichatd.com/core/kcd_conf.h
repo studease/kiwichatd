@@ -17,9 +17,6 @@ typedef struct {
 	stu_file_t     pid;
 
 	kcd_edition_t  edition;
-	stu_str_t      license;
-	stu_str_t      request;
-	stu_str_t      response;
 
 	stu_bool_t     master_process;
 	stu_int32_t    worker_processes;
@@ -42,11 +39,6 @@ typedef struct {
 	stu_list_t     ident;              // stu_upstream_server_t *
 	stu_list_t     stat;               // stu_upstream_server_t *
 } kcd_conf_t;
-
-typedef struct {
-	stu_file_t     file;
-	stu_buf_t     *buffer;
-} kcd_conf_file_t;
 
 stu_int32_t  kcd_conf_parse_file(kcd_conf_t *conf, u_char *name);
 
