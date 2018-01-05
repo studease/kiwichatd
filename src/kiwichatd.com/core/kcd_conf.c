@@ -15,8 +15,14 @@ extern stu_str_t                  stu_http_root;
 extern stu_http_method_bitmask_t  stu_http_upstream_method_mask[];
 
 static kcd_edition_mask_t  kcd_edition_mask[] = {
-	{ stu_string("PREVIEW"), PREVIEW },
-	{ stu_string("ENTERPRISE"), ENTERPRISE },
+	{ stu_string("preview"), PREVIEW },
+	{ stu_string("enterprise"), ENTERPRISE },
+	{ stu_null_string, 0x00 }
+};
+
+static kcd_mode_mask_t  kcd_mode_mask[] = {
+	{ stu_string("smooth"), STU_MQ_MODE_SMOOTH },
+	{ stu_string("strict"), STU_MQ_MODE_STRICT },
 	{ stu_null_string, 0x00 }
 };
 
@@ -27,6 +33,7 @@ static stu_str_t  KCD_CONF_LOG = stu_string("log");
 static stu_str_t  KCD_CONF_PID = stu_string("pid");
 
 static stu_str_t  KCD_CONF_EDITION = stu_string("edition");
+static stu_str_t  KCD_CONF_MODE    = stu_string("mode");
 
 static stu_str_t  KCD_CONF_MASTER_PROCESS   = stu_string("master_process");
 static stu_str_t  KCD_CONF_WORKER_PROCESSES = stu_string("worker_processes");
@@ -65,6 +72,7 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 	stu_str_t          *v_string;
 	stu_double_t       *v_double;
 	kcd_edition_mask_t *e;
+	kcd_mode_mask_t    *m;
 	u_char              tmp[KCD_CONF_MAX_SIZE];
 	stu_file_t          file;
 
@@ -131,6 +139,19 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 		for (e = kcd_edition_mask; e->name.len; e++) {
 			if (stu_strncasecmp(v_string->data, e->name.data, e->name.len) == 0) {
 				conf->edition = e->mask;
+				break;
+			}
+		}
+	}
+
+	// mode
+	item = stu_json_get_object_item_by(root, &KCD_CONF_MODE);
+	if (item && item->type == STU_JSON_TYPE_STRING) {
+		v_string = (stu_str_t *) item->value;
+
+		for (m = kcd_mode_mask; m->name.len; m++) {
+			if (stu_strncasecmp(v_string->data, m->name.data, m->name.len) == 0) {
+				conf->mode = m->mask;
 				break;
 			}
 		}

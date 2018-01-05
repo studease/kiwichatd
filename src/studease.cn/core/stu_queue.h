@@ -50,7 +50,7 @@ struct stu_queue_s {
 #define stu_queue_head(h)             \
 	(h)->next
 
-#define stu_queue_last(h)             \
+#define stu_queue_tail(h)             \
 	(h)->prev
 
 #define stu_queue_sentinel(h)         \

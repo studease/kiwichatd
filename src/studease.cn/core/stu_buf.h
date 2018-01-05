@@ -14,10 +14,9 @@
 typedef struct stu_chain_s stu_chain_t;
 
 typedef struct {
+	u_char      *start;
 	u_char      *pos;
 	u_char      *last;
-
-	u_char      *start;
 	u_char      *end;
 	stu_int32_t  size;
 } stu_buf_t;

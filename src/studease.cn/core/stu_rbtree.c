@@ -19,6 +19,7 @@ stu_rbtree_insert(stu_rbtree_t *tree, stu_rbtree_node_t *node) {
 	/* a binary tree insert */
 	root = (stu_rbtree_node_t **) &tree->root;
 	sentinel = tree->sentinel;
+
 	if (*root == sentinel) {
 		node->parent = NULL;
 		node->left = sentinel;
@@ -121,6 +122,41 @@ stu_rbtree_insert_timer_value(stu_rbtree_node_t *tmp, stu_rbtree_node_t *node, s
 	stu_rbtree_red(node);
 }
 
+stu_rbtree_node_t *
+stu_rbtree_search(stu_rbtree_t *tree, stu_rbtree_key_t key) {
+	stu_rbtree_node_t **root, *sentinel;
+
+	/* a binary tree search */
+	root = (stu_rbtree_node_t **) &tree->root;
+	sentinel = tree->sentinel;
+
+	if (*root == sentinel) {
+		return NULL;
+	}
+
+	return tree->search(*root, key, sentinel);
+}
+
+stu_rbtree_node_t *
+stu_rbtree_search_value(stu_rbtree_node_t *tmp, stu_rbtree_key_t key, stu_rbtree_node_t *sentinel) {
+	stu_rbtree_node_t **p;
+
+	for ( ;; ) {
+		if (key == tmp->key) {
+			return tmp;
+		}
+
+		p = (key < tmp->key) ? &tmp->left : &tmp->right;
+		if (*p == sentinel) {
+			break;
+		}
+
+		tmp = *p;
+	}
+
+	return NULL;
+}
+
 void
 stu_rbtree_delete(stu_rbtree_t *tree, stu_rbtree_node_t *node) {
 	stu_rbtree_node_t **root, *sentinel, *subst, *tmp, *w;
@@ -129,6 +165,7 @@ stu_rbtree_delete(stu_rbtree_t *tree, stu_rbtree_node_t *node) {
 	/* a binary tree delete */
 	root = (stu_rbtree_node_t **) &tree->root;
 	sentinel = tree->sentinel;
+
 	if (node->left == sentinel) {
 		tmp = node->right;
 		subst = node;
@@ -273,6 +310,16 @@ static stu_inline void
 stu_rbtree_left_rotate(stu_rbtree_node_t **root, stu_rbtree_node_t *sentinel, stu_rbtree_node_t *node) {
 	stu_rbtree_node_t *tmp;
 
+	 /*
+	   |                        |
+	  x                  y
+	  / \                      / \
+	a   y  ---left-->  x   c
+		/ \                 / \
+	  b   c          a   b
+	       (node = x)
+	*/
+
 	tmp = node->right;
 	node->right = tmp->left;
 	if (tmp->left != sentinel) {
@@ -295,6 +342,16 @@ stu_rbtree_left_rotate(stu_rbtree_node_t **root, stu_rbtree_node_t *sentinel, st
 static stu_inline void
 stu_rbtree_right_rotate(stu_rbtree_node_t **root, stu_rbtree_node_t *sentinel, stu_rbtree_node_t *node) {
 	stu_rbtree_node_t *tmp;
+
+	/*
+	   |                        |
+	  x                  y
+	  / \                      / \
+	a   y  <--right--  x   c
+		/ \                 / \
+	  b   c          a   b
+	       (node = y)
+	*/
 
 	tmp = node->left;
 	node->left = tmp->right;

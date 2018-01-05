@@ -45,7 +45,7 @@ stu_websocket_init() {
 
 stu_bool_t
 stu_websocket_is_upgrade_request(stu_http_request_t *r) {
-	if (r->headers_in.connection && r->headers_in.upgrade
+	if (r->headers_in.connection && r->headers_in.upgrade && r->headers_out.sec_websocket_accept
 			&& stu_strncasestr(r->headers_in.connection->value.data, (char *) "Upgrade", 7) != NULL
 			&& stu_strncasecmp(r->headers_in.upgrade->value.data, (u_char *) "websocket", 9) == 0) {
 

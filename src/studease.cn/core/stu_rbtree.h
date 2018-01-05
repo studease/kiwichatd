@@ -14,12 +14,13 @@
 #define STU_RBTREE_NODE_RED   0x01
 #define STU_RBTREE_NODE_BLACK 0x00
 
-typedef stu_uint32_t  stu_rbtree_key_t;
-typedef stu_int32_t   stu_rbtree_key_int_t;
+typedef stu_uint64_t  stu_rbtree_key_t;
+typedef stu_int64_t   stu_rbtree_key_int_t;
 
 typedef struct stu_rbtree_node_s  stu_rbtree_node_t;
 
-typedef void (*stu_rbtree_insert_pt)(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
+typedef void               (*stu_rbtree_insert_pt)(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
+typedef stu_rbtree_node_t *(*stu_rbtree_search_pt)(stu_rbtree_node_t *root, stu_rbtree_key_t key, stu_rbtree_node_t *sentinel);
 
 struct stu_rbtree_node_s {
 	stu_rbtree_key_t      key;
@@ -34,20 +35,25 @@ typedef struct {
 	stu_rbtree_node_t    *root;
 	stu_rbtree_node_t    *sentinel;
 	stu_rbtree_insert_pt  insert;
+	stu_rbtree_search_pt  search;
 } stu_rbtree_t;
 
 
-#define stu_rbtree_init(tree, s, i)             \
-	stu_rbtree_sentinel_init(s);                 \
-	(tree)->root = s;                            \
-	(tree)->sentinel = s;                        \
-	(tree)->insert = i
+#define stu_rbtree_init(tree, s, i, f) \
+	stu_rbtree_sentinel_init(s);        \
+	(tree)->root = s;                   \
+	(tree)->sentinel = s;               \
+	(tree)->insert = i;                 \
+	(tree)->search = f
 
-void stu_rbtree_insert(stu_rbtree_t *tree, stu_rbtree_node_t *node);
-void stu_rbtree_delete(stu_rbtree_t *tree, stu_rbtree_node_t *node);
+void  stu_rbtree_insert(stu_rbtree_t *tree, stu_rbtree_node_t *node);
+void  stu_rbtree_delete(stu_rbtree_t *tree, stu_rbtree_node_t *node);
 
-void stu_rbtree_insert_value(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
-void stu_rbtree_insert_timer_value(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
+void  stu_rbtree_insert_value(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
+void  stu_rbtree_insert_timer_value(stu_rbtree_node_t *root, stu_rbtree_node_t *node, stu_rbtree_node_t *sentinel);
+
+stu_rbtree_node_t *stu_rbtree_search(stu_rbtree_t *tree, stu_rbtree_key_t key);
+stu_rbtree_node_t *stu_rbtree_search_value(stu_rbtree_node_t *root, stu_rbtree_key_t key, stu_rbtree_node_t *sentinel);
 
 #define stu_rbtree_red(node)           ((node)->color = STU_RBTREE_NODE_RED)
 #define stu_rbtree_black(node)         ((node)->color = STU_RBTREE_NODE_BLACK)

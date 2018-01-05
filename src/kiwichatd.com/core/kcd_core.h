@@ -20,12 +20,16 @@ typedef struct {
 	kcd_edition_t  mask;
 } kcd_edition_mask_t;
 
+typedef struct {
+	stu_str_t      name;
+	stu_uint8_t    mask;
+} kcd_mode_mask_t;
+
 typedef struct kcd_channel_s kcd_channel_t;
 
 #include "kcd_conf.h"
 #include "kcd_protocol.h"
 #include "kcd_user.h"
-#include "kcd_message.h"
 #include "kcd_channel.h"
 #include "kcd_request.h"
 #include "kcd_cycle.h"

@@ -83,6 +83,12 @@ kcd_cycle_init() {
 		return STU_ERROR;
 	}
 
+	// mq
+	if (stu_mq_init((stu_str_t *) &kcd_cycle->conf.history_path, KCD_CHANNEL_LIST_DEFAULT_SIZE) == STU_ERROR) {
+		stu_log_error(0, "Failed to init mq.");
+		return STU_ERROR;
+	}
+
 	// process
 	if (stu_process_init() == STU_ERROR) {
 		stu_log_error(0, "Failed to init process.");

@@ -14,22 +14,20 @@
 #define STU_POOL_DEFAULT_SIZE 4096
 #define STU_POOL_MAX_FAILURE  5
 
-typedef struct stu_pool_s stu_pool_t;
-
 typedef struct {
-	stu_queue_t      queue;
-	u_char          *start;
-	u_char          *last;
-	u_char          *end;
-	stu_uint32_t     failed;
+	stu_queue_t   queue;
+	u_char       *start;
+	u_char       *last;
+	u_char       *end;
+	stu_uint32_t  failed;
 } stu_pool_data_t;
 
-struct stu_pool_s {
-	stu_mutex_t      lock;
-	stu_queue_t      queue;
-	stu_queue_t      large;
-	stu_uint32_t     size;
-};
+typedef struct {
+	stu_mutex_t   lock;
+	stu_queue_t   queue;
+	stu_queue_t   large;
+	size_t        size;
+} stu_pool_t;
 
 stu_pool_t *stu_pool_create(size_t size);
 void        stu_pool_reset(stu_pool_t *pool);

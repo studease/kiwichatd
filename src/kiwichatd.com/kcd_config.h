@@ -9,6 +9,6 @@
 #define KIWICHATD_COM_KCD_CONFIG_H_
 
 const stu_str_t  __NAME    = stu_string("KiwiChatd");
-const stu_str_t  __VERSION = stu_string("2.0.05");
+const stu_str_t  __VERSION = stu_string("2.0.06");
 
 #endif /* KIWICHATD_COM_KCD_CONFIG_H_ */

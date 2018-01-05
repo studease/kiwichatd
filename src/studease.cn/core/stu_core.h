@@ -132,6 +132,7 @@ typedef struct stu_upstream_s stu_upstream_t;
 #include "stu_connection.h"
 #include "stu_upstream.h"
 #include "stu_timer.h"
+#include "stu_mq.h"
 #include "stu_thread.h"
 #include "stu_process.h"
 #include "stu_channel.h"

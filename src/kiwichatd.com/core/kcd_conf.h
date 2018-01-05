@@ -10,13 +10,14 @@
 
 #include "kcd_core.h"
 
-#define KCD_CONF_MAX_SIZE               4096
+#define KCD_CONF_MAX_SIZE  4096
 
 typedef struct {
 	stu_file_t     log;
 	stu_file_t     pid;
 
 	kcd_edition_t  edition;
+	stu_uint8_t    mode;
 
 	stu_bool_t     master_process;
 	stu_int32_t    worker_processes;

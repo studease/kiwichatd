@@ -344,7 +344,7 @@ stu_websocket_filter_foreach_handler(stu_websocket_request_t *r, stu_str_t *patt
 
 	elts = &list->elts;
 
-	for (q = stu_queue_last(&elts->queue); q != stu_queue_sentinel(&elts->queue); q = stu_queue_prev(q)) {
+	for (q = stu_queue_tail(&elts->queue); q != stu_queue_sentinel(&elts->queue); q = stu_queue_prev(q)) {
 		e = stu_queue_data(q, stu_list_elt_t, queue);
 		f = (stu_websocket_filter_t *) e->value;
 

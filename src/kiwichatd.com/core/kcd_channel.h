@@ -20,7 +20,6 @@
 struct kcd_channel_s {
 	stu_str_t      id;
 	stu_hash_t     userlist;
-	kcd_message_t *message;
 	stu_uint8_t    state;
 
 	unsigned       record:1;
@@ -34,7 +33,7 @@ stu_int32_t  kcd_channel_insert_locked(kcd_channel_t *ch, kcd_user_t *user);
 void         kcd_channel_remove(kcd_channel_t *ch, kcd_user_t *user);
 void         kcd_channel_remove_locked(kcd_channel_t *ch, kcd_user_t *user);
 
-void         kcd_channel_broadcast(kcd_channel_t *ch, u_char *p, size_t size);
+void         kcd_channel_broadcast(kcd_channel_t *ch, u_char *data, size_t len, off_t off);
 
 stu_int32_t  kcd_channel_add_push_user_timer(stu_msec_t timer);
 stu_int32_t  kcd_channel_add_push_stat_timer(stu_msec_t timer);

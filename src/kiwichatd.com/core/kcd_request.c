@@ -200,8 +200,8 @@ kcd_upgrade_preview_handler(stu_http_request_t *r) {
 		stu_atomic_test_set(&ch->state, stat);
 	}
 
-	if (ch->record && ch->message) {
-		user->history = user->current = ch->message->file.offset;
+	if (ch->record) {
+		user->history = user->current = stu_mq_push(&ch->id, NULL, 0, kcd_cycle->conf.mode);
 	}
 
 	/* ident response */
@@ -384,7 +384,7 @@ static void
 kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	stu_json_t            *ji, *ji_req, *ji_cmd, *ji_data, *ji_type, *ji_chan, *ji_user, *ji_uid;
 	stu_json_t            *jo, *jo_req, *jo_raw, *jo_data, *jo_type, *jo_chan, *jo_user, *jo_uid, *jo_uname, *jo_uicon, *jo_urole;
-	stu_connection_t      *c;
+	stu_connection_t      *c, *mc;
 	kcd_user_t            *user, *mate;
 	kcd_channel_t         *ch;
 	stu_str_t             *cmd, *mid;
@@ -394,6 +394,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	stu_int32_t            sec, req, type, n;
 	stu_uint32_t           hk;
 	size_t                 size;
+	off_t                  off;
 
 	c = r->connection;
 	user = c->data;
@@ -452,6 +453,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	}
 
 	cmd = (stu_str_t *) ji_cmd->value;
+	type = *(stu_double_t *) ji_type->value;
 
 	if (stu_strncmp(cmd->data, KCD_PROTOCOL_CMD_TEXT.data, KCD_PROTOCOL_CMD_TEXT.len) == 0) {
 		if (user->role < ch->state) {
@@ -502,14 +504,10 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	stu_json_add_item_to_object(jo, jo_chan);
 	stu_json_add_item_to_object(jo, jo_user);
 
-	f->payload_data.last = stu_json_stringify(jo, (u_char *) f->payload_data.last);
-	f->payload_data.last = stu_websocket_encode_frame(f, f->payload_data.start);
-	f->payload_data.pos = f->payload_data.start;
-
-	size = f->payload_data.last - f->payload_data.pos;
+	f->payload_data.last = stu_json_stringify(jo, (u_char *) f->payload_data.pos);
 
 	/* handle message */
-	switch ((type = *(stu_double_t *) ji_type->value)) {
+	switch (type) {
 	case KCD_PROTOCOL_UNI:
 		ji_user = stu_json_get_object_item_by(ji, &KCD_PROTOCOL_USER);
 		if (ji_user == NULL || ji_user->type != STU_JSON_TYPE_OBJECT) {
@@ -534,18 +532,22 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 		if (mate == NULL) {
 			kcd_request_send_error(r, STU_HTTP_NOT_FOUND, req);
 		} else {
-			n = send(c->fd, f->payload_data.pos, size, 0);
+			f->payload_data.last = stu_websocket_encode_frame(f, f->payload_data.start);
+			size = f->payload_data.last - f->payload_data.start;
+
+			n = send(c->fd, f->payload_data.start, size, 0);
 			if (n == -1) {
-				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mid->data, mate->connection->fd);
+				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", user->id.data, c->fd);
 			}
 
-			if (mate == user) {
+			mc = mate->connection;
+			if (mc == c) {
 				goto uni_done;
 			}
 
-			n = send(mate->connection->fd, f->payload_data.pos, size, 0);
+			n = send(mc->fd, f->payload_data.start, size, 0);
 			if (n == -1) {
-				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mid->data, mate->connection->fd);
+				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mate->id.data, mc->fd);
 			}
 		}
 
@@ -555,14 +557,14 @@ uni_done:
 		break;
 
 	case KCD_PROTOCOL_MULTI:
-		stu_mutex_lock(&ch->userlist.lock);
+		size = f->payload_data.last - f->payload_data.pos;
 
-		kcd_channel_broadcast(ch, f->payload_data.pos, size);
-
-		if (ch->record && ch->message) {
-			kcd_message_push(ch->message, f->payload_data.pos, size);
+		if (ch->record) {
+			off = stu_mq_push(&ch->id, f->payload_data.pos, size, kcd_cycle->conf.mode);
 		}
 
+		stu_mutex_lock(&ch->userlist.lock);
+		kcd_channel_broadcast(ch, f->payload_data.pos, size, off);
 		stu_mutex_unlock(&ch->userlist.lock);
 		break;
 
@@ -673,26 +675,63 @@ kcd_request_send_ident(stu_connection_t *c) {
 
 static stu_int32_t
 kcd_request_send_history(stu_connection_t *c, stu_int32_t n) {
-	kcd_user_t    *user;
-	kcd_channel_t *ch;
-	u_char        *pos;
-	u_char         tmp[KCD_REQUEST_DEFAULT_SIZE];
-	stu_int32_t    v;
+	stu_json_t            *ji, *ji_type;
+	kcd_user_t            *user;
+	kcd_channel_t         *ch;
+	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
+	stu_websocket_frame_t  f;
+	stu_int32_t            v;
+	size_t                 size;
+	off_t                  off;
 
 	user = c->data;
 	ch = user->channel;
+	off = user->history;
+
+	stu_memzero(tmp, KCD_REQUEST_DEFAULT_SIZE);
+
+	f.fin = TRUE;
+	f.opcode = STU_WEBSOCKET_OPCODE_BINARY;
+	f.mask = FALSE;
+	f.payload_data.start = tmp;
+	f.payload_data.pos = f.payload_data.last = f.payload_data.start + 10;
+	f.payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
+	f.payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
 
 	for (/* void */; n > 0; n--) {
-		pos = kcd_message_read(ch->message, tmp, &user->history);
-		if (pos == tmp) {
+		f.payload_data.last = stu_mq_read(&ch->id, f.payload_data.pos, &off, TRUE);
+
+		size = f.payload_data.last - f.payload_data.pos;
+		if (size == 0) {
 			break;
 		}
 
-		v = send(c->fd, tmp, pos - tmp, 0);
+		ji = stu_json_parse(f.payload_data.pos, size);
+		if (ji == NULL || ji->type != STU_JSON_TYPE_OBJECT) {
+			stu_log_error(0, "Bad kcd history message: %s.", f.payload_data.pos);
+			return STU_ERROR;
+		}
+
+		ji_type = stu_json_get_object_item_by(ji, &KCD_PROTOCOL_TYPE);
+		if (ji_type == NULL || ji_type->type != STU_JSON_TYPE_NUMBER) {
+			stu_log_error(0, "Bad kcd history message format: %s.", f.payload_data.pos);
+			return STU_ERROR;
+		}
+
+		*(stu_double_t *) ji_type->value = KCD_PROTOCOL_HISTORY;
+
+		f.payload_data.last = stu_json_stringify(ji, f.payload_data.pos);
+		f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
+
+		size = f.payload_data.last - f.payload_data.start;
+
+		v = send(c->fd, f.payload_data.start, size, 0);
 		if (v == -1) {
 			//stu_log_error(stu_errno, "Failed to send cache: fd=%d.", fd);
 			break;
 		}
+
+		user->history = off;
 	}
 
 	return STU_OK;

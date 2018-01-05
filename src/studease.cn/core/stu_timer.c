@@ -19,7 +19,7 @@ static stu_timer_t  stu_timer;
 stu_int32_t
 stu_timer_init(void) {
 	stu_mutex_init(&stu_timer.lock, NULL);
-	stu_rbtree_init(&stu_timer.tree, &stu_timer.sentinel, stu_rbtree_insert_timer_value);
+	stu_rbtree_init(&stu_timer.tree, &stu_timer.sentinel, stu_rbtree_insert_timer_value, NULL);
 
 	return STU_OK;
 }

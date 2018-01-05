@@ -62,7 +62,7 @@ kcd_channel_init(kcd_channel_t *ch, stu_str_t *id) {
 	}
 
 	if (kcd_cycle->conf.push_history) {
-		ch->message = kcd_channels.hooks.malloc_fn(sizeof(kcd_message_t));
+		/*ch->message = kcd_channels.hooks.malloc_fn(sizeof(kcd_message_t));
 		if (ch->message == NULL) {
 			stu_log_error(0, "Failed to malloc kcd message.");
 			return STU_ERROR;
@@ -71,7 +71,7 @@ kcd_channel_init(kcd_channel_t *ch, stu_str_t *id) {
 		if (kcd_message_init(ch->message, &kcd_cycle->conf.history_path, &ch->id) == STU_ERROR) {
 			stu_log_error(0, "Failed to init kcd message.");
 			return STU_ERROR;
-		}
+		}*/
 
 		ch->record = TRUE;
 	}
@@ -98,16 +98,16 @@ kcd_channel_insert(stu_str_t *id, kcd_user_t *user) {
 		}
 
 		if (kcd_channel_init(ch, id) == STU_ERROR) {
-			stu_log_error(0, "Failed to init channel: id=\"%s\".", ch->id.data);
+			stu_log_error(0, "Failed to init channel: id=\"%s\".", id->data);
 			goto failed;
 		}
 
 		if (stu_hash_insert_locked(&kcd_channels, id, ch) == STU_ERROR) {
-			stu_log_error(0, "Failed to insert channel.");
+			stu_log_error(0, "Failed to insert channel: id=\"%s\".", id->data);
 			goto failed;
 		}
 
-		stu_log_debug(5, "new channel inserted: id=\"%s\", total=%d.", ch->id.data, kcd_channels.length);
+		stu_log_debug(5, "new channel inserted: id=\"%s\", total=%d.", id->data, kcd_channels.length);
 	}
 
 	rc = kcd_channel_insert_locked(ch, user);
@@ -156,10 +156,12 @@ kcd_channel_remove_locked(kcd_channel_t *ch, kcd_user_t *user) {
 
 		stu_log_debug(5, "removed channel: id=\"%s\", total=%d.", ch->id.data, kcd_channels.length);
 
-		if (ch->message) {
-			stu_free(ch->message->file.name.data);
+		if (ch->record) {
+			/*stu_free(ch->message->file.name.data);
 			kcd_channels.hooks.free_fn(ch->message);
-			stu_file_close(ch->message->file.fd);
+			stu_file_close(ch->message->file.fd);*/
+
+			stu_mq_destory(&ch->id);
 		}
 
 		kcd_channels.hooks.free_fn(ch->id.data);
@@ -171,9 +173,9 @@ kcd_channel_remove_locked(kcd_channel_t *ch, kcd_user_t *user) {
 
 static void
 kcd_channel_remove_exactly(kcd_channel_t *ch, kcd_user_t *user) {
-	stu_hash_t       *hash;
-	stu_hash_elt_t   *e;
-	stu_uint32_t      hk, i;
+	stu_hash_t     *hash;
+	stu_hash_elt_t *e;
+	stu_uint32_t    hk, i;
 
 	hash = &ch->userlist;
 	hk = stu_hash_key(user->id.data, user->id.len, hash->flags);
@@ -210,18 +212,35 @@ kcd_channel_remove_exactly(kcd_channel_t *ch, kcd_user_t *user) {
 
 
 void
-kcd_channel_broadcast(kcd_channel_t *ch, u_char *buffer, size_t size) {
+kcd_channel_broadcast(kcd_channel_t *ch, u_char *data, size_t len, off_t off) {
 	stu_list_elt_t        *elts;
 	stu_hash_elt_t        *e;
 	stu_queue_t           *q;
 	kcd_user_t            *user;
 	stu_connection_t      *c;
+	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
+	stu_websocket_frame_t  f;
 	stu_socket_t           fd;
 	stu_int32_t            n;
+	size_t                 size;
 
 	stu_log_debug(3, "broadcasting in channel \"%s\".", ch->id.data);
 
 	elts = &ch->userlist.keys->elts;
+	stu_memzero(tmp, KCD_REQUEST_DEFAULT_SIZE);
+
+	f.fin = TRUE;
+	f.opcode = STU_WEBSOCKET_OPCODE_BINARY;
+	f.mask = FALSE;
+	f.payload_data.start = tmp;
+	f.payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
+	f.payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
+
+	f.payload_data.pos = data;
+	f.payload_data.last = data + len;
+	f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
+
+	size = f.payload_data.last - f.payload_data.start;
 
 	for (q = stu_queue_head(&elts->queue); q != NULL && q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
 		e = stu_queue_data(q, stu_hash_elt_t, queue);
@@ -233,10 +252,19 @@ kcd_channel_broadcast(kcd_channel_t *ch, u_char *buffer, size_t size) {
 
 		fd = stu_atomic_fetch(&c->fd);
 
-		n = send(fd, buffer, size, 0);
+		n = send(fd, f.payload_data.start, size, 0);
 		if (n == -1) {
 			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, fd);
+
+			if (off >= 0) {
+				user->current = off;
+			}
+
 			continue;
+		}
+
+		if (off >= 0) {
+			user->current = off + len + 4;
 		}
 	}
 }
@@ -308,6 +336,7 @@ kcd_channel_push_user(stu_str_t *id, void *value) {
 	kcd_channel_t         *ch;
 	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
 	stu_websocket_frame_t  f;
+	size_t                 size;
 
 	ch = value;
 
@@ -337,13 +366,14 @@ kcd_channel_push_user(stu_str_t *id, void *value) {
 	stu_json_add_item_to_object(jo, jo_raw);
 	stu_json_add_item_to_object(jo, jo_chan);
 
-	f.payload_data.last = stu_json_stringify(jo, f.payload_data.last);
+	f.payload_data.last = stu_json_stringify(jo, f.payload_data.pos);
 	f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
-	f.payload_data.pos = f.payload_data.start;
+
+	size = f.payload_data.last - f.payload_data.start;
 
 	stu_json_delete(jo);
 
-	kcd_channel_broadcast(ch, f.payload_data.pos, f.payload_data.last - f.payload_data.pos);
+	kcd_channel_broadcast(ch, f.payload_data.start, size, -1);
 
 	stu_mutex_unlock(&ch->userlist.lock);
 }
