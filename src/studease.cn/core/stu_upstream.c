@@ -217,13 +217,15 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 	}
 
 	if (u->server != s) {
-		if (u->server) {
+		if (u->server && pc->fd != STU_SOCKET_INVALID) {
 			stu_event_del(&pc->read, STU_READ_EVENT, STU_CLOSE_EVENT);
 			stu_event_del(&pc->write, STU_WRITE_EVENT, 0);
 		}
 
 		u->server = s;
+	}
 
+	if (pc->fd == STU_SOCKET_INVALID) {
 		fd = socket(s->addr.sockaddr.sin_family, SOCK_STREAM, 0);
 		if (fd == (stu_socket_t) STU_SOCKET_INVALID) {
 			stu_log_error(stu_errno, "Failed to create socket for upstream %s, fd=%d.", s->name.data, c->fd);

@@ -157,10 +157,6 @@ kcd_channel_remove_locked(kcd_channel_t *ch, kcd_user_t *user) {
 		stu_log_debug(5, "removed channel: id=\"%s\", total=%d.", ch->id.data, kcd_channels.length);
 
 		if (ch->record) {
-			/*stu_free(ch->message->file.name.data);
-			kcd_channels.hooks.free_fn(ch->message);
-			stu_file_close(ch->message->file.fd);*/
-
 			stu_mq_destory(&ch->id);
 		}
 
@@ -346,7 +342,7 @@ kcd_channel_push_user(stu_str_t *id, void *value) {
 	f.opcode = STU_WEBSOCKET_OPCODE_BINARY;
 	f.mask = FALSE;
 	f.payload_data.start = tmp;
-	f.payload_data.pos = f.payload_data.last = f.payload_data.start + 10;
+	f.payload_data.pos = f.payload_data.last = f.payload_data.start;
 	f.payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
 	f.payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
 
@@ -366,9 +362,7 @@ kcd_channel_push_user(stu_str_t *id, void *value) {
 	stu_json_add_item_to_object(jo, jo_raw);
 	stu_json_add_item_to_object(jo, jo_chan);
 
-	f.payload_data.last = stu_json_stringify(jo, f.payload_data.pos);
-	f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
-
+	f.payload_data.last = stu_json_stringify(jo, f.payload_data.start);
 	size = f.payload_data.last - f.payload_data.start;
 
 	stu_json_delete(jo);
@@ -498,8 +492,10 @@ kcd_channel_push_stat_generate_request(stu_connection_t *pc) {
 static stu_int32_t
 kcd_channel_push_stat_analyze_response(stu_connection_t *pc) {
 	stu_http_request_t *pr;
+	stu_upstream_t     *u;
 
 	pr = (stu_http_request_t *) pc->request;
+	u = pc->upstream;
 
 	if (pr->headers_out.status != STU_HTTP_OK) {
 		stu_log_error(0, "Bad push channel stat response: status=%d.", pr->headers_out.status);
@@ -507,6 +503,8 @@ kcd_channel_push_stat_analyze_response(stu_connection_t *pc) {
 	}
 
 	stu_log_debug(4, "kcd push stat done.");
+
+	u->finalize_handler_pt(u->connection, pr->headers_out.status);
 
 	return STU_OK;
 }
