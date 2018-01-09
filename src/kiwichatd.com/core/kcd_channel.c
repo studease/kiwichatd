@@ -20,6 +20,7 @@ static stu_str_t    KCD_UPSTREAM_STAT = stu_string("stat");
 static stu_int32_t  kcd_channel_init(kcd_channel_t *ch, stu_str_t *id);
 static void         kcd_channel_remove_exactly(kcd_channel_t *ch, kcd_user_t *user);
 
+static void         kcd_channel_slow_write_handler(stu_event_t *ev);
 static void         kcd_channel_push_user_handler(stu_event_t *ev);
 static void         kcd_channel_push_stat_handler(stu_event_t *ev);
 
@@ -62,17 +63,6 @@ kcd_channel_init(kcd_channel_t *ch, stu_str_t *id) {
 	}
 
 	if (kcd_cycle->conf.push_history) {
-		/*ch->message = kcd_channels.hooks.malloc_fn(sizeof(kcd_message_t));
-		if (ch->message == NULL) {
-			stu_log_error(0, "Failed to malloc kcd message.");
-			return STU_ERROR;
-		}
-
-		if (kcd_message_init(ch->message, &kcd_cycle->conf.history_path, &ch->id) == STU_ERROR) {
-			stu_log_error(0, "Failed to init kcd message.");
-			return STU_ERROR;
-		}*/
-
 		ch->record = TRUE;
 	}
 
@@ -240,28 +230,88 @@ kcd_channel_broadcast(kcd_channel_t *ch, u_char *data, size_t len, off_t off) {
 
 	for (q = stu_queue_head(&elts->queue); q != NULL && q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
 		e = stu_queue_data(q, stu_hash_elt_t, queue);
+
 		user = (kcd_user_t *) e->value;
+		if (user->slow) {
+			continue;
+		}
+
 		c = user->connection;
 		if (c == NULL || c->timedout || c->error || c->close || c->destroyed) {
 			continue;
 		}
 
-		fd = stu_atomic_fetch(&c->fd);
+		fd = stu_atomic_fetch_add(&c->fd, 0);
 
 		n = send(fd, f.payload_data.start, size, 0);
 		if (n == -1) {
 			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, fd);
 
-			if (off >= 0) {
-				user->current = off;
-			}
+			if (kcd_cycle->conf.mode == STU_MQ_MODE_STRICT) {
+				// TODO: atomic set
+				c->write.handler = kcd_channel_slow_write_handler;
 
-			continue;
+				if (stu_event_add(&c->write, STU_WRITE_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
+					c->error = TRUE;
+					continue;
+				}
+
+				user->slow = TRUE;
+			}
 		}
 
 		if (off >= 0) {
-			user->current = off + len + 4;
+			stu_atomic_test_set(&user->current, off + (n == -1 ? 0 : len + 4));
 		}
+	}
+}
+
+static void
+kcd_channel_slow_write_handler(stu_event_t *ev) {
+	kcd_user_t            *user;
+	kcd_channel_t         *ch;
+	stu_connection_t      *c;
+	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
+	stu_websocket_frame_t  f;
+	stu_int32_t            i, n;
+	size_t                 size;
+	off_t                  off;
+
+	c = ev->data;
+	user = c->data;
+	ch = user->channel;
+	off = user->current;
+
+	stu_memzero(tmp, KCD_REQUEST_DEFAULT_SIZE);
+
+	f.fin = TRUE;
+	f.opcode = STU_WEBSOCKET_OPCODE_BINARY;
+	f.mask = FALSE;
+	f.payload_data.start = tmp;
+	f.payload_data.pos = f.payload_data.last = f.payload_data.start + 10;
+	f.payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
+	f.payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
+
+	for (i = 0; i < 5; i++) {
+		f.payload_data.last = stu_mq_read(&ch->id, f.payload_data.pos, &off, FALSE);
+
+		size = f.payload_data.last - f.payload_data.pos;
+		if (size == 0) {
+			user->slow = FALSE;
+			stu_event_del(ev, STU_WRITE_EVENT, 0);
+			break;
+		}
+
+		f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
+		size = f.payload_data.last - f.payload_data.start;
+
+		n = send(c->fd, f.payload_data.start, size, 0);
+		if (n == -1) {
+			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, fd);
+			break;
+		}
+
+		user->current = off;
 	}
 }
 

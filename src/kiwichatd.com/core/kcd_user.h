@@ -43,6 +43,8 @@ typedef struct {
 
 	off_t             history;
 	off_t             current;
+
+	unsigned          slow:1;
 } kcd_user_t;
 
 stu_int32_t  kcd_user_init(kcd_user_t *user, stu_str_t *id, stu_str_t *name, stu_str_t *icon, stu_str_t *token, stu_str_t *chan);

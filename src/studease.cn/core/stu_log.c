@@ -55,7 +55,7 @@ __stu_log(const char *fmt, ...) {
 	*p = '\0';
 
 	if (stu_logger) {
-		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch(&stu_logger->offset));
+		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch_add(&stu_logger->offset, 0));
 	}
 
 	stu_printf((const char *) tmp);
@@ -87,7 +87,7 @@ __stu_log_debug(stu_int32_t level, const char *fmt, ...) {
 	*p = '\0';
 
 	if (stu_logger) {
-		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch(&stu_logger->offset));
+		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch_add(&stu_logger->offset, 0));
 	}
 
 	stu_printf((const char *) tmp);
@@ -120,7 +120,7 @@ __stu_log_error(stu_int32_t err, const char *fmt, ...) {
 	*p = '\0';
 
 	if (stu_logger) {
-		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch(&stu_logger->offset));
+		stu_file_write(stu_logger, tmp, p - tmp, stu_atomic_fetch_add(&stu_logger->offset, 0));
 	}
 
 	stu_printf((const char *) tmp);

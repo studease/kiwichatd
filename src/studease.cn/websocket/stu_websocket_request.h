@@ -13,23 +13,28 @@
 #define STU_WEBSOCKET_REQUEST_DEFAULT_SIZE  1024
 #define STU_WEBSOCKET_REQUEST_LARGE_SIZE    4096
 
+typedef void (*stu_websocket_event_handler_pt)(stu_websocket_request_t *r);
+
 struct stu_websocket_request_s {
-	stu_connection_t      *connection;
+	stu_connection_t               *connection;
 
-	stu_buf_t             *frame_in;
-	stu_buf_t             *busy;
+	stu_websocket_event_handler_pt  read_event_handler;
+	stu_websocket_event_handler_pt  write_event_handler;
 
-	stu_websocket_frame_t  frames_in;
-	stu_websocket_frame_t  frames_out;
+	stu_buf_t                      *frame_in;
+	stu_buf_t                      *busy;
 
-	stu_int32_t            status;
+	stu_websocket_frame_t           frames_in;
+	stu_websocket_frame_t           frames_out;
+
+	stu_int32_t                     status;
 
 	// used for parsing request.
-	stu_uint8_t            state;
+	stu_uint8_t                     state;
 };
 
 void  stu_websocket_request_read_handler(stu_event_t *ev);
-void  stu_websocket_request_write_handler(stu_event_t *ev);
+void  stu_websocket_request_write_handler(stu_websocket_request_t *r);
 
 stu_websocket_request_t *
       stu_websocket_create_request(stu_connection_t *c);

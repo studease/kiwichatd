@@ -33,55 +33,60 @@
 #define STU_HTTP_CONNECTION_CLOSE       1
 #define STU_HTTP_CONNECTION_KEEP_ALIVE  2
 
+typedef void (*stu_http_event_handler_pt)(stu_http_request_t *r);
+
 typedef struct {
-	stu_str_t                name;
-	stu_uint16_t             mask;
+	stu_str_t                  name;
+	stu_uint16_t               mask;
 } stu_http_method_bitmask_t;
 
 typedef struct {
-	stu_chain_t             *bufs;
+	stu_chain_t               *bufs;
 } stu_http_request_body_t;
 
 struct stu_http_request_s {
-	stu_connection_t        *connection;
+	stu_connection_t          *connection;
 
-	stu_uint16_t             method;
-	stu_uint16_t             http_version;
+	stu_http_event_handler_pt  read_event_handler;
+	stu_http_event_handler_pt  write_event_handler;
 
-	stu_str_t                request_line;
-	stu_str_t                schema;
-	stu_str_t                host;
-	stu_str_t                port;
-	stu_str_t                uri;
-	stu_str_t                args;
+	stu_uint16_t               method;
+	stu_uint16_t               http_version;
 
-	stu_buf_t               *header_in;
-	stu_buf_t               *busy;
+	stu_str_t                  request_line;
+	stu_str_t                  schema;
+	stu_str_t                  host;
+	stu_str_t                  port;
+	stu_str_t                  uri;
+	stu_str_t                  args;
 
-	stu_http_headers_in_t    headers_in;
-	stu_http_headers_out_t   headers_out;
-	stu_http_request_body_t *request_body;
-	stu_http_request_body_t *response_body;
+	stu_buf_t                 *header_in;
+	stu_buf_t                 *busy;
+
+	stu_http_headers_in_t      headers_in;
+	stu_http_headers_out_t     headers_out;
+	stu_http_request_body_t   *request_body;
+	stu_http_request_body_t   *response_body;
 
 	// used to parse HTTP headers.
-	uint8_t                  state;
-	stu_uint32_t             header_hash;
-	stu_uint32_t             lowcase_index;
-	u_char                   lowcase_header[STU_HTTP_HEADER_MAX_LEN];
+	uint8_t                    state;
+	stu_uint32_t               header_hash;
+	stu_uint32_t               lowcase_index;
+	u_char                     lowcase_header[STU_HTTP_HEADER_MAX_LEN];
 
-	stu_bool_t               invalid_header;
+	stu_bool_t                 invalid_header;
 
-	stu_uint16_t             http_major;
-	stu_uint16_t             http_minor;
+	stu_uint16_t               http_major;
+	stu_uint16_t               http_minor;
 
-	u_char                  *header_name_start;
-	u_char                  *header_name_end;
-	u_char                  *header_start;
-	u_char                  *header_end;
+	u_char                    *header_name_start;
+	u_char                    *header_name_end;
+	u_char                    *header_start;
+	u_char                    *header_end;
 };
 
 void  stu_http_request_read_handler(stu_event_t *ev);
-void  stu_http_request_write_handler(stu_event_t *ev);
+void  stu_http_request_write_handler(stu_http_request_t *r);
 
 stu_http_request_t *
              stu_http_create_request(stu_connection_t *c);

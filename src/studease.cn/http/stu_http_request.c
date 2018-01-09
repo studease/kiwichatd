@@ -14,8 +14,8 @@ static stu_int32_t  stu_http_alloc_large_header_buffer(stu_http_request_t *r, st
 static stu_int32_t  stu_http_process_request_header(stu_http_request_t *r);
 static stu_int32_t  stu_http_filter_foreach_handler(stu_http_request_t *r, stu_str_t *pattern, stu_list_t *list);
 static stu_int32_t  stu_http_validate_host(stu_str_t *host, stu_pool_t *pool);
-static void         stu_http_run_phases(stu_event_t *ev);
-static void         stu_http_request_empty_handler(stu_event_t *ev);
+static void         stu_http_run_phases(stu_http_request_t *r);
+static void         stu_http_request_empty_handler(stu_http_request_t *r);
 
 static stu_int32_t  stu_http_process_header_line(stu_http_request_t *r, stu_table_elt_t *h, stu_uint32_t offset);
 static stu_int32_t  stu_http_process_unique_header_line(stu_http_request_t *r, stu_table_elt_t *h, stu_uint32_t offset);
@@ -145,13 +145,14 @@ stu_http_create_request(stu_connection_t *c) {
 
 	if (c->request == NULL) {
 		r = stu_pcalloc(c->pool, sizeof(stu_http_request_t));
+		if (r == NULL) {
+			stu_log_error(0, "Failed to create http request.");
+			return NULL;
+		}
+
+		r->write_event_handler = stu_http_request_write_handler;
 	} else {
 		r = c->request;
-	}
-
-	if (r == NULL) {
-		stu_log_error(0, "Failed to create http request.");
-		return NULL;
 	}
 
 	r->connection = c;
@@ -551,7 +552,7 @@ done:
 
 	stu_mutex_unlock(&stu_http_filter_hash.lock);
 
-	c->write.handler(&c->write);
+	r->write_event_handler(r);
 }
 
 static stu_int32_t
@@ -575,21 +576,19 @@ stu_http_filter_foreach_handler(stu_http_request_t *r, stu_str_t *pattern, stu_l
 }
 
 void
-stu_http_request_write_handler(stu_event_t *ev) {
-	stu_connection_t   *c;
-	stu_http_request_t *r;
-
-	c = ev->data;
-	r = c->request;
+stu_http_request_write_handler(stu_http_request_t *r) {
+	stu_connection_t *c;
 
 	if (r == NULL) {
 		stu_log_error(0, "something wrong here.");
 		return;
 	}
 
-	stu_log_debug(4, "http run request: \"%s\"", r->uri.data);
+	c = r->connection;
 
-	ev->timedout = FALSE;
+	c->timedout = FALSE;
+
+	stu_log_debug(4, "http run request: \"%s\"", r->uri.data);
 
 	stu_http_finalize_request(r, r->headers_out.status);
 }
@@ -866,8 +865,8 @@ stu_http_finalize_request(stu_http_request_t *r, stu_int32_t rc) {
 
 	if (rc == STU_DECLINED) {
 		// TODO: response file system
-		//c->write.handler = stu_http_core_run_phases;
-		stu_http_run_phases(&c->write);
+		r->write_event_handler = stu_http_run_phases;
+		stu_http_run_phases(r);
 		return;
 	}
 
@@ -877,27 +876,22 @@ stu_http_finalize_request(stu_http_request_t *r, stu_int32_t rc) {
 	}
 
 	if (rc == STU_HTTP_CREATED || rc == STU_HTTP_NO_CONTENT || rc >= STU_HTTP_MULTIPLE_CHOICES) {
-		//c->read.handler = stu_http_request_write_handler;
-		//c->write.handler = stu_http_request_write_handler;
+		r->read_event_handler = stu_http_request_write_handler;
+		r->write_event_handler = stu_http_request_write_handler;
 		stu_http_send_special_response(r, rc);
 		return;
 	}
 
-	c->write.handler = stu_http_request_empty_handler;
+	r->write_event_handler = stu_http_request_empty_handler;
 
 	stu_http_close_request(r);
 }
 
 static void
-stu_http_run_phases(stu_event_t *ev) {
-	stu_connection_t   *c;
-	stu_http_request_t *r;
-	stu_list_elt_t     *elts, *e;
-	stu_queue_t        *q;
-	stu_http_phase_t   *ph;
-
-	c = ev->data;
-	r = c->request;
+stu_http_run_phases(stu_http_request_t *r) {
+	stu_list_elt_t   *elts, *e;
+	stu_queue_t      *q;
+	stu_http_phase_t *ph;
 
 	elts = &stu_http_phases.elts;
 
@@ -958,7 +952,7 @@ stu_http_send_special_response(stu_http_request_t *r, stu_int32_t rc) {
 }
 
 static void
-stu_http_request_empty_handler(stu_event_t *ev) {
+stu_http_request_empty_handler(stu_http_request_t *r) {
 	stu_log_debug(4, "http request empty handler.");
 }
 

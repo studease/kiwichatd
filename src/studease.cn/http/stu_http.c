@@ -177,7 +177,6 @@ again:
 	c->write.epfd = stu_threads[stu_http_thread_n].epfd;
 
 	c->read.handler = stu_http_request_read_handler;
-	c->write.handler = stu_http_request_write_handler;
 
 	if (stu_event_add(&c->read, STU_READ_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
 		stu_log_error(0, "Failed to add http client read event.");

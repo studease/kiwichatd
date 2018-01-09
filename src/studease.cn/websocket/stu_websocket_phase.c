@@ -36,7 +36,6 @@ stu_websocket_phase_upgrade_handler(stu_http_request_t *r) {
 	stu_http_free_request(r);
 
 	c->read.handler = stu_websocket_request_read_handler;
-	c->write.handler = stu_websocket_request_write_handler;
 
 	return STU_DECLINED;
 }

@@ -11,8 +11,8 @@ static stu_int32_t   stu_websocket_process_request_frame(stu_websocket_request_t
 static stu_uint32_t  stu_websocket_read_request_buffer(stu_websocket_request_t *r);
 static stu_int32_t   stu_websocket_alloc_large_buffer(stu_websocket_request_t *r);
 static stu_int32_t   stu_websocket_filter_foreach_handler(stu_websocket_request_t *r, stu_str_t *pattern, stu_list_t *list);
-static void          stu_websocket_run_phases(stu_event_t *ev);
-static void          stu_websocket_request_empty_handler(stu_event_t *ev);
+static void          stu_websocket_run_phases(stu_websocket_request_t *r);
+static void          stu_websocket_request_empty_handler(stu_websocket_request_t *r);
 
 extern stu_hash_t  stu_websocket_filter_hash;
 extern stu_list_t  stu_websocket_phases;
@@ -91,13 +91,14 @@ stu_websocket_create_request(stu_connection_t *c) {
 
 	if (c->request == NULL) {
 		r = stu_pcalloc(c->pool, sizeof(stu_websocket_request_t));
+		if (r == NULL) {
+			stu_log_error(0, "Failed to create websocket request.");
+			return NULL;
+		}
+
+		r->write_event_handler = stu_websocket_request_write_handler;
 	} else {
 		r = c->request;
-	}
-
-	if (r == NULL) {
-		stu_log_error(0, "Failed to create websocket request.");
-		return NULL;
 	}
 
 	r->connection = c;
@@ -333,7 +334,7 @@ done:
 
 	stu_mutex_unlock(&stu_websocket_filter_hash.lock);
 
-	c->write.handler(&c->write);
+	r->write_event_handler(r);
 }
 
 static stu_int32_t
@@ -357,21 +358,19 @@ stu_websocket_filter_foreach_handler(stu_websocket_request_t *r, stu_str_t *patt
 }
 
 void
-stu_websocket_request_write_handler(stu_event_t *ev) {
-	stu_connection_t        *c;
-	stu_websocket_request_t *r;
-
-	c = ev->data;
-	r = c->request;
+stu_websocket_request_write_handler(stu_websocket_request_t *r) {
+	stu_connection_t *c;
 
 	if (r == NULL) {
 		stu_log_error(0, "something wrong here.");
 		return;
 	}
 
-	stu_log_debug(4, "websocket run request.");
+	c = r->connection;
 
-	ev->timedout = FALSE;
+	c->timedout = FALSE;
+
+	stu_log_debug(4, "websocket run request.");
 
 	stu_websocket_finalize_request(r, r->status);
 }
@@ -395,8 +394,8 @@ stu_websocket_finalize_request(stu_websocket_request_t *r, stu_int32_t rc) {
 
 	if (rc == STU_DECLINED) {
 		// TODO: response file system
-		//c->write.handler = stu_websocket_core_run_phases;
-		stu_websocket_run_phases(&c->write);
+		r->write_event_handler = stu_websocket_run_phases;
+		stu_websocket_run_phases(r);
 		return;
 	}
 
@@ -405,21 +404,16 @@ stu_websocket_finalize_request(stu_websocket_request_t *r, stu_int32_t rc) {
 		return;
 	}
 
-	c->write.handler = stu_websocket_request_empty_handler;
+	r->write_event_handler = stu_websocket_request_empty_handler;
 
 	stu_websocket_close_request(r);
 }
 
 static void
-stu_websocket_run_phases(stu_event_t *ev) {
-	stu_connection_t        *c;
-	stu_websocket_request_t *r;
-	stu_list_elt_t          *elts, *e;
-	stu_queue_t             *q;
-	stu_websocket_phase_t   *ph;
-
-	c = ev->data;
-	r = c->request;
+stu_websocket_run_phases(stu_websocket_request_t *r) {
+	stu_list_elt_t        *elts, *e;
+	stu_queue_t           *q;
+	stu_websocket_phase_t *ph;
 
 	elts = &stu_websocket_phases.elts;
 
@@ -434,7 +428,7 @@ stu_websocket_run_phases(stu_event_t *ev) {
 }
 
 static void
-stu_websocket_request_empty_handler(stu_event_t *ev) {
+stu_websocket_request_empty_handler(stu_websocket_request_t *r) {
 	stu_log_debug(4, "websocket request empty handler.");
 }
 

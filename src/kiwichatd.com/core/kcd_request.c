@@ -388,8 +388,8 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	kcd_user_t            *user, *mate;
 	kcd_channel_t         *ch;
 	stu_str_t             *cmd, *mid;
-	stu_websocket_frame_t *f;
 	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
+	stu_websocket_frame_t  f;
 	struct timeval         tm;
 	stu_int32_t            sec, req, type, n;
 	stu_uint32_t           hk;
@@ -400,17 +400,16 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	user = c->data;
 	ch = user->channel;
 
-	f = &r->frames_out;
 	req = 0;
 	stu_memzero(tmp, KCD_REQUEST_DEFAULT_SIZE);
 
-	f->fin = TRUE;
-	f->opcode = STU_WEBSOCKET_OPCODE_BINARY;
-	f->mask = FALSE;
-	f->payload_data.start = tmp;
-	f->payload_data.pos = f->payload_data.last = f->payload_data.start + 10;
-	f->payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
-	f->payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
+	f.fin = TRUE;
+	f.opcode = STU_WEBSOCKET_OPCODE_BINARY;
+	f.mask = FALSE;
+	f.payload_data.start = tmp;
+	f.payload_data.pos = f.payload_data.last = f.payload_data.start + 10;
+	f.payload_data.end = tmp + KCD_REQUEST_DEFAULT_SIZE;
+	f.payload_data.size = KCD_REQUEST_DEFAULT_SIZE;
 
 	/* parse request */
 	ji = stu_json_parse(r->frames_in.payload_data.pos, r->frames_in.payload_data.size);
@@ -504,7 +503,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 	stu_json_add_item_to_object(jo, jo_chan);
 	stu_json_add_item_to_object(jo, jo_user);
 
-	f->payload_data.last = stu_json_stringify(jo, (u_char *) f->payload_data.pos);
+	f.payload_data.last = stu_json_stringify(jo, (u_char *) f.payload_data.pos);
 
 	/* handle message */
 	switch (type) {
@@ -532,10 +531,10 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 		if (mate == NULL) {
 			kcd_request_send_error(r, STU_HTTP_NOT_FOUND, req);
 		} else {
-			f->payload_data.last = stu_websocket_encode_frame(f, f->payload_data.start);
-			size = f->payload_data.last - f->payload_data.start;
+			f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
+			size = f.payload_data.last - f.payload_data.start;
 
-			n = send(c->fd, f->payload_data.start, size, 0);
+			n = send(c->fd, f.payload_data.start, size, 0);
 			if (n == -1) {
 				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", user->id.data, c->fd);
 			}
@@ -545,7 +544,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 				goto uni_done;
 			}
 
-			n = send(mc->fd, f->payload_data.start, size, 0);
+			n = send(mc->fd, f.payload_data.start, size, 0);
 			if (n == -1) {
 				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mate->id.data, mc->fd);
 			}
@@ -557,14 +556,14 @@ uni_done:
 		break;
 
 	case KCD_PROTOCOL_MULTI:
-		size = f->payload_data.last - f->payload_data.pos;
+		size = f.payload_data.last - f.payload_data.pos;
 
 		if (ch->record) {
-			off = stu_mq_push(&ch->id, f->payload_data.pos, size, kcd_cycle->conf.mode);
+			off = stu_mq_push(&ch->id, f.payload_data.pos, size, kcd_cycle->conf.mode);
 		}
 
 		stu_mutex_lock(&ch->userlist.lock);
-		kcd_channel_broadcast(ch, f->payload_data.pos, size, off);
+		kcd_channel_broadcast(ch, f.payload_data.pos, size, off);
 		stu_mutex_unlock(&ch->userlist.lock);
 		break;
 
