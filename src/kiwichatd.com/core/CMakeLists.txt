@@ -1,0 +1,5 @@
+#core files
+AUX_SOURCE_DIRECTORY(. DIR_KCD_CORE_SRC)
+
+#build core
+ADD_LIBRARY(kcd ${DIR_KCD_CORE_SRC})

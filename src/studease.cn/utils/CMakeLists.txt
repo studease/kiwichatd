@@ -1,0 +1,5 @@
+#utils files
+AUX_SOURCE_DIRECTORY(. DIR_STU_UTILS_SRC)
+
+#build utils
+ADD_LIBRARY(utils ${DIR_STU_UTILS_SRC})

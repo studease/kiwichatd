@@ -1,0 +1,5 @@
+#core files
+AUX_SOURCE_DIRECTORY(. DIR_STU_CORE_SRC)
+
+#build core
+ADD_LIBRARY(core ${DIR_STU_CORE_SRC})

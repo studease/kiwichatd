@@ -76,6 +76,7 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 	u_char              tmp[KCD_CONF_MAX_SIZE];
 	stu_file_t          file;
 
+	stu_memzero(&file, sizeof(stu_file_t));
 	stu_memzero(tmp, KCD_CONF_MAX_SIZE);
 
 	if (kcd_conf_get_default(conf) == STU_ERROR) {

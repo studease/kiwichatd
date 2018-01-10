@@ -14,7 +14,7 @@ if [ $HTTP_CODE != 101 ]; then
 		kill -9 $pid
 	done
 	
-	./start.sh
+	../start.sh
 	echo "Restarted kiwichatd."
 fi
 

@@ -1,0 +1,6 @@
+#add sub directory
+ADD_SUBDIRECTORY(core)
+ADD_SUBDIRECTORY(event)
+ADD_SUBDIRECTORY(utils)
+ADD_SUBDIRECTORY(http)
+ADD_SUBDIRECTORY(websocket)

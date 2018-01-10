@@ -1,0 +1,5 @@
+#http files
+AUX_SOURCE_DIRECTORY(. DIR_STU_HTTP_SRC)
+
+#build http
+ADD_LIBRARY(http ${DIR_STU_HTTP_SRC})
