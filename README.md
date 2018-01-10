@@ -31,8 +31,7 @@ present in params. However, this is not safe.
 To build kiwichatd, you need CMake 3.5 and or above, and OpenSSL installed. Then run:
 
 ```
-cmake .
-make
+./build.sh
 ```
 
 
@@ -40,7 +39,7 @@ make
 ------
 
 ```
-sudo ./start.sh
+./start.sh
 ```
 
 
