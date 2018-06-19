@@ -1,25 +1,26 @@
 /*
  * stu_hardware.c
  *
- *  Created on: 2017年12月26日
+ *  Created on: 2017骞�12鏈�26鏃�
  *      Author: Tony Lau
  */
 
-#include "stu_hardware.h"
+#include "stu_utils.h"
 
+
+#if (STU_LINUX)
 
 u_char *
-stu_hardware_get_hwaddr(u_char *dst) {
+stu_hardware_get_macaddr(u_char *dst) {
 	u_char       *p;
-	struct ifreq *ifr;
-	struct ifreq  buf[INET_ADDRSTRLEN];
+	struct ifreq *ifr, buf[INET_ADDRSTRLEN];
 	struct ifconf ifc;
 	stu_socket_t  fd;
 	stu_int32_t   i;
 
 	p = NULL;
 
-	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	fd = stu_socket(AF_INET, SOCK_DGRAM, 0);
 	if (fd == -1) {
 		stu_log_error(stu_errno, "Failed to create socket for macaddr detection.");
 		return NULL;
@@ -65,7 +66,54 @@ stu_hardware_get_hwaddr(u_char *dst) {
 
 failed:
 
-	stu_close_socket(fd);
+	stu_socket_close(fd);
 
 	return p;
 }
+
+#elif (STU_WIN32)
+
+u_char *
+stu_hardware_get_macaddr(u_char *dst) {
+	u_char           *p;
+	PIP_ADAPTER_INFO  infos, info;
+	ULONG             rc, size;
+
+	p = NULL;
+	infos = NULL;
+	size = 0;
+
+	GetAdaptersInfo(infos, &size);
+
+	infos = stu_calloc(size);
+	if (infos == NULL) {
+		stu_log_error(stu_errno, "Failed to calloc IP_ADAPTER_INFO buffer.");
+		return NULL;
+	}
+
+	rc = GetAdaptersInfo(infos, &size);
+	if (rc) {
+		stu_log_error(stu_errno, "Failed to GetAdaptersInfo().");
+		goto failed;
+	}
+
+	for (info = infos; info; info = info->Next) {
+		p = stu_sprintf(dst, "%02X:%02X:%02X:%02X:%02X:%02X",
+				info->Address[0],
+				info->Address[1],
+				info->Address[2],
+				info->Address[3],
+				info->Address[4],
+				info->Address[5]);
+
+		break;
+	}
+
+failed:
+
+	stu_free(infos);
+
+	return p;
+}
+
+#endif

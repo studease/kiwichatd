@@ -1,7 +1,7 @@
 /*
  * stu_timer.h
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
@@ -31,10 +31,10 @@ stu_msec_t   stu_timer_find(void);
 void         stu_timer_expire(void);
 void         stu_timer_cancel(void);
 
-stu_inline void stu_timer_add(stu_event_t *ev, stu_msec_t timer);
-void            stu_timer_add_locked(stu_event_t *ev, stu_msec_t timer);
+void         stu_timer_add(stu_event_t *ev, stu_msec_t timer);
+void         stu_timer_add_locked(stu_event_t *ev, stu_msec_t timer);
 
-stu_inline void stu_timer_del(stu_event_t *ev);
-void            stu_timer_del_locked(stu_event_t *ev);
+void         stu_timer_del(stu_event_t *ev);
+void         stu_timer_del_locked(stu_event_t *ev);
 
 #endif /* STUDEASE_CN_CORE_STU_TIMER_H_ */

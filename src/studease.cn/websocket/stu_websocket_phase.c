@@ -1,7 +1,7 @@
 /*
  * stu_websocket_phase.c
  *
- *  Created on: 2017年11月28日
+ *  Created on: 2017骞�11鏈�28鏃�
  *      Author: Tony Lau
  */
 
@@ -35,7 +35,7 @@ stu_websocket_phase_upgrade_handler(stu_http_request_t *r) {
 	stu_pool_reset(c->pool);
 	stu_http_free_request(r);
 
-	c->read.handler = stu_websocket_request_read_handler;
+	c->read->handler = stu_websocket_request_read_handler;
 
 	return STU_DECLINED;
 }

@@ -1,12 +1,14 @@
 /*
- * stu_time.c
+ * stu_times.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2018��4��26��
  *      Author: Tony Lau
  */
 
 #include "../stu_config.h"
 #include "stu_core.h"
+
+static stu_msec_t stu_monotonic_time(time_t sec, stu_uint64_t msec);
 
 
 /*
@@ -20,7 +22,7 @@
 
 #define STU_TIME_SLOTS   64
 
-static stu_uint32_t        slot;
+static stu_uint32_t      slot;
 static stu_mutex_t       stu_time_lock;
 
 volatile stu_msec_t      stu_current_msec;
@@ -81,7 +83,7 @@ stu_time_update(void) {
 	sec = tv.tv_sec;
 	msec = tv.tv_usec / 1000;
 
-	stu_current_msec = (stu_msec_t) sec * 1000 + msec;
+	stu_current_msec = stu_monotonic_time(sec, msec);
 
 	tp = &cached_time[slot];
 	if (tp->sec == sec) {
@@ -115,7 +117,7 @@ stu_time_update(void) {
 #elif (STU_HAVE_GMTOFF)
 
 	stu_localtime(sec, &tm);
-	cached_gmtoff = (stu_int_t) (tm.stu_tm_gmtoff / 60);
+	cached_gmtoff = (stu_int32_t) (tm.stu_tm_gmtoff / 60);
 	tp->gmtoff = cached_gmtoff;
 
 #else
@@ -147,6 +149,29 @@ stu_time_update(void) {
 	stu_mutex_unlock(&stu_time_lock);
 }
 
+static stu_msec_t
+stu_monotonic_time(time_t sec, stu_uint64_t msec) {
+#if (STU_HAVE_CLOCK_MONOTONIC)
+	struct timespec  ts;
+
+#if defined(CLOCK_MONOTONIC_FAST)
+	ck_gettime(CLOCK_MONOTONIC_FAST, &ts);
+
+#elif defined(CLOCK_MONOTONIC_COARSE)
+	gettime(CLOCK_MONOTONIC_COARSE, &ts);
+
+#else
+	_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+
+	sec = ts.tv_sec;
+	msec = ts.tv_nsec / 1000000;
+
+#endif
+
+    return (stu_msec_t) sec * 1000 + msec;
+}
+
 u_char *
 stu_http_time(u_char *buf, time_t t) {
 	stu_tm_t  tm;
@@ -173,47 +198,6 @@ stu_http_cookie_time(u_char *buf, time_t t) {
 			week[tm.stu_tm_wday], tm.stu_tm_mday, months[tm.stu_tm_mon - 1],
 			(tm.stu_tm_year > 2037) ? tm.stu_tm_year : tm.stu_tm_year % 100,
 			tm.stu_tm_hour, tm.stu_tm_min, tm.stu_tm_sec);
-}
-
-
-void
-stu_timezone_update(void) {
-	struct tm *t;
-	char       buf[4];
-	time_t     s;
-
-	s = time(NULL);
-	t = localtime(&s);
-
-	strftime(buf, 4, "%H", t);
-}
-
-
-void
-stu_localtime(time_t s, stu_tm_t *tm) {
-#if (STU_HAVE_LOCALTIME_R)
-	(void) localtime_r(&s, tm);
-#else
-	stu_tm_t *t;
-
-	t = localtime(&s);
-	*tm = *t;
-#endif
-
-	tm->stu_tm_mon++;
-	tm->stu_tm_year += 1900;
-}
-
-void
-stu_libc_localtime(time_t s, struct tm *tm) {
-#if (STU_HAVE_LOCALTIME_R)
-	(void) localtime_r(&s, tm);
-#else
-	struct tm *t;
-
-	t = localtime(&s);
-	*tm = *t;
-#endif
 }
 
 
@@ -296,25 +280,13 @@ stu_gmtime(time_t t, stu_tm_t *tp) {
 	tp->stu_tm_wday = (stu_tm_wday_t) wday;
 }
 
-void
-stu_libc_gmtime(time_t s, struct tm *tm) {
-#if (STU_HAVE_LOCALTIME_R)
-	(void) gmtime_r(&s, tm);
-#else
-	struct tm *t;
-
-	t = gmtime(&s);
-	*tm = *t;
-#endif
-}
-
-
 time_t
 stu_next_time(time_t when) {
 	time_t     now, next;
 	struct tm  tm;
 
 	now = stu_time();
+
 	stu_libc_localtime(now, &tm);
 
 	tm.tm_hour = (int) (when / 3600);

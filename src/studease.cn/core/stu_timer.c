@@ -1,7 +1,7 @@
 /*
  * stu_timer.c
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
@@ -137,7 +137,7 @@ done:
 }
 
 
-stu_inline void
+void
 stu_timer_add(stu_event_t *ev, stu_msec_t timer) {
 	stu_mutex_lock(&stu_timer.lock);
 	stu_timer_add_locked(ev, timer);
@@ -175,7 +175,7 @@ stu_timer_add_locked(stu_event_t *ev, stu_msec_t timer) {
 	ev->timer_set = 1;
 }
 
-stu_inline void
+void
 stu_timer_del(stu_event_t *ev) {
 	stu_mutex_lock(&stu_timer.lock);
 	stu_timer_del_locked(ev);

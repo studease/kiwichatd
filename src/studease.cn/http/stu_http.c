@@ -1,7 +1,7 @@
 /*
  * stu_http.c
  *
- *  Created on: 2017年11月21日
+ *  Created on: 2017骞�11鏈�21鏃�
  *      Author: Tony Lau
  */
 
@@ -47,7 +47,7 @@ stu_http_init() {
 }
 
 stu_int32_t
-stu_http_listen(stu_fd_t epfd, uint16_t port) {
+stu_http_listen(stu_fd_t evfd, uint16_t port) {
 	stu_connection_t   *c;
 	int                 optval;
 	socklen_t           optlen;
@@ -55,7 +55,7 @@ stu_http_listen(stu_fd_t epfd, uint16_t port) {
 
 	optlen = sizeof(optval);
 
-	stu_httpfd = socket(AF_INET, SOCK_STREAM, 0);
+	stu_httpfd = stu_socket(AF_INET, SOCK_STREAM, 0);
 	if (stu_httpfd == -1) {
 		stu_log_error(stu_errno, "Failed to create http server fd.");
 		return STU_ERROR;
@@ -67,11 +67,14 @@ stu_http_listen(stu_fd_t epfd, uint16_t port) {
 		return STU_ERROR;
 	}
 
+#if (STU_LINUX)
+
 	if (setsockopt(stu_httpfd, SOL_SOCKET, SO_REUSEPORT, (void *) &optval, optlen) == -1) {
 		stu_log_error(stu_errno, "setsockopt(SO_REUSEPORT) failed while setting http server fd.");
 		return STU_ERROR;
 	}
 
+# endif
 /*
 	if (getsockopt(stu_httpfd, SOL_SOCKET, SO_SNDBUF, (void *) &optval, &optlen) == -1) {
 		stu_log_error(stu_errno, "getsockopt(SO_SNDBUF) failed while setting http server fd.");
@@ -100,15 +103,15 @@ stu_http_listen(stu_fd_t epfd, uint16_t port) {
 		return STU_ERROR;
 	}
 
-	c->read.epfd = epfd;
-	c->read.handler = stu_http_handler;
+	c->read->evfd = evfd;
+	c->read->handler = stu_http_handler;
 
-	if (stu_event_add(&c->read, STU_READ_EVENT, 0) == STU_ERROR) {
+	if (stu_event_add(c->read, STU_READ_EVENT, 0) == STU_ERROR) {
 		stu_log_error(0, "Failed to add http server event.");
 		return STU_ERROR;
 	}
 
-	bzero(&(sa.sin_zero), 8);
+	stu_memzero(&sa.sin_zero, 8);
 	sa.sin_family = AF_INET;
 	sa.sin_addr.s_addr = htons(INADDR_ANY);
 	sa.sin_port = htons(port);
@@ -141,7 +144,7 @@ stu_http_handler(stu_event_t *ev) {
 
 again:
 
-	fd = accept(stu_httpfd, (struct sockaddr*)&sa, &socklen);
+	fd = accept(stu_httpfd, (struct sockaddr*) &sa, &socklen);
 	if (fd == -1) {
 		err = stu_errno;
 		if (err == EAGAIN) {
@@ -173,12 +176,14 @@ again:
 		stu_http_thread_n = 0;
 	}
 
-	c->read.epfd = stu_threads[stu_http_thread_n].epfd;
-	c->write.epfd = stu_threads[stu_http_thread_n].epfd;
+	c->read->evfd = stu_threads[stu_http_thread_n].evfd;
+	c->write->evfd = stu_threads[stu_http_thread_n].evfd;
+	c->recv = stu_os_io.recv;
+	c->send = stu_os_io.send;
 
-	c->read.handler = stu_http_request_read_handler;
+	c->read->handler = stu_http_request_read_handler;
 
-	if (stu_event_add(&c->read, STU_READ_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
+	if (stu_event_add(c->read, STU_READ_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
 		stu_log_error(0, "Failed to add http client read event.");
 		return;
 	}

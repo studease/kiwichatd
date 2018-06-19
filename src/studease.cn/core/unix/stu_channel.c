@@ -1,12 +1,12 @@
 /*
  * stu_channel.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
-#include "../stu_config.h"
-#include "stu_core.h"
+#include "../../stu_config.h"
+#include "../stu_core.h"
 
 
 stu_int32_t
@@ -127,7 +127,7 @@ stu_channel_read(stu_socket_t s, stu_channel_t *ch, size_t size) {
 }
 
 stu_int32_t
-stu_channel_add_event(stu_fd_t epfd, stu_fd_t fd, uint32_t event, stu_event_handler_pt handler) {
+stu_channel_add_event(stu_fd_t evfd, stu_fd_t fd, uint32_t event, stu_event_handler_pt handler) {
 	stu_connection_t *c;
 	stu_event_t      *ev;
 
@@ -136,13 +136,13 @@ stu_channel_add_event(stu_fd_t epfd, stu_fd_t fd, uint32_t event, stu_event_hand
 		return STU_ERROR;
 	}
 
-	ev = event == STU_READ_EVENT ? &c->read : &c->write;
+	ev = event == STU_READ_EVENT ? c->read : c->write;
 	if (ev == NULL) {
 		stu_log_error(0, "Failed to add channel event: fd=%d, ev=%d.", fd, event);
 		return STU_ERROR;
 	}
 
-	ev->epfd = epfd;
+	ev->evfd = evfd;
 	ev->handler = handler;
 
 	if (stu_event_add(ev, event, STU_CLEAR_EVENT) == STU_ERROR) {

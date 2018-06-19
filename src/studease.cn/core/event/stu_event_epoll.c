@@ -1,12 +1,13 @@
 /*
  * stu_event_epoll.c
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
-#include "../stu_config.h"
-#include "../core/stu_core.h"
+#include "stu_event.h"
+
+extern stu_connection_t  stu_free_connections;
 
 
 stu_fd_t
@@ -21,6 +22,7 @@ stu_event_epoll_create() {
 	return fd;
 }
 
+
 stu_int32_t
 stu_event_epoll_add(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 	stu_connection_t   *c;
@@ -34,13 +36,13 @@ stu_event_epoll_add(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 	events = event;
 
 	if (event == STU_READ_EVENT) {
-		e = &c->write;
+		e = c->write;
 		prev = EPOLLOUT;
 #if (STU_READ_EVENT != EPOLLIN|EPOLLRDHUP)
 		events = EPOLLIN|EPOLLRDHUP;
 #endif
 	} else {
-		e = &c->read;
+		e = c->read;
 		prev = EPOLLIN|EPOLLRDHUP;
 #if (STU_WRITE_EVENT != EPOLLOUT)
 		events = EPOLLOUT;
@@ -59,7 +61,7 @@ stu_event_epoll_add(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 
 	stu_log_debug(2, "epoll add event: fd=%d, op=%d, ev=%X.", c->fd, op, ee.events);
 
-	if (epoll_ctl(ev->epfd, op, c->fd, &ee) == -1) {
+	if (epoll_ctl(ev->evfd, op, c->fd, &ee) == -1) {
 		stu_log_error(stu_errno, "epoll_ctl(%d, %d) failed", op, c->fd);
 		return STU_ERROR;
 	}
@@ -90,10 +92,10 @@ stu_event_epoll_del(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 	c = (stu_connection_t *) ev->data;
 
 	if (event == STU_READ_EVENT) {
-		e = &c->write;
+		e = c->write;
 		prev = EPOLLOUT;
 	} else {
-		e = &c->read;
+		e = c->read;
 		prev = EPOLLIN|EPOLLRDHUP;
 	}
 
@@ -109,7 +111,7 @@ stu_event_epoll_del(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 
 	stu_log_debug(2, "epoll del event: fd=%d, op=%d, ev=%X.", c->fd, op, ee.events);
 
-	if (epoll_ctl(ev->epfd, op, c->fd, &ee) == -1) {
+	if (epoll_ctl(ev->evfd, op, c->fd, &ee) == -1) {
 		stu_log_error(stu_errno, "epoll_ctl(%d, %d) failed", op, c->fd);
 		return STU_ERROR;
 	}
@@ -120,12 +122,73 @@ stu_event_epoll_del(stu_event_t *ev, uint32_t event, stu_uint32_t flags) {
 }
 
 stu_int32_t
-stu_event_epoll_process_events(stu_fd_t epfd, stu_msec_t timer, stu_uint32_t flags) {
+stu_event_epoll_add_connection(stu_connection_t *c) {
+	stu_event_t        *ev;
+	struct epoll_event  ee;
+
+	ev = c->read;
+
+	ee.events = EPOLLIN|EPOLLOUT|EPOLLET|EPOLLRDHUP;
+	ee.data.ptr = (void *) c;
+
+	stu_log_debug(2, "epoll add connection: fd=%d, ev=%X.", c->fd, ee.events);
+
+	if (epoll_ctl(ev->evfd, EPOLL_CTL_ADD, c->fd, &ee) == -1) {
+		stu_log_error(stu_errno, "epoll_ctl(EPOLL_CTL_ADD, %d) failed.", c->fd);
+		return STU_ERROR;
+	}
+
+	c->read->active = TRUE;
+	c->write->active = TRUE;
+
+	return STU_OK;
+}
+
+stu_int32_t
+stu_event_epoll_del_connection(stu_connection_t *c, stu_uint32_t flags) {
+	stu_event_t        *ev;
+	int                 op;
+	struct epoll_event  ee;
+
+	ev = c->read;
+
+	/*
+	 * when the file descriptor is closed the epoll automatically deletes
+	 * it from its queue so we do not need to delete explicitly the event
+	 * before the closing the file descriptor
+	 */
+	if (flags & STU_CLOSE_EVENT) {
+		c->read->active = FALSE;
+		c->write->active = FALSE;
+		return STU_OK;
+	}
+
+	stu_log_debug(3, "epoll del connection: fd=%d.", c->fd);
+
+	op = EPOLL_CTL_DEL;
+	ee.events = 0;
+	ee.data.ptr = NULL;
+
+	if (epoll_ctl(ev->evfd, op, c->fd, &ee) == -1) {
+		stu_log_error(stu_errno, "epoll_ctl(%d, %d) failed.", op, c->fd);
+		return STU_ERROR;
+	}
+
+	c->read->active = FALSE;
+	c->write->active = FALSE;
+
+	return STU_OK;
+}
+
+
+stu_int32_t
+stu_event_epoll_process_events(stu_fd_t evfd, stu_msec_t timer, stu_uint32_t flags) {
 	stu_connection_t   *c;
+	stu_queue_t        *q;
 	struct epoll_event *ev, events[STU_EPOLL_EVENTS];
 	stu_int32_t         nev, i;
 
-	nev = epoll_wait(epfd, events, STU_EPOLL_EVENTS, timer);
+	nev = epoll_wait(evfd, events, STU_EPOLL_EVENTS, timer);
 
 	if (flags & STU_EVENT_FLAGS_UPDATE_TIME) {
 		stu_time_update();
@@ -143,14 +206,31 @@ stu_event_epoll_process_events(stu_fd_t epfd, stu_msec_t timer, stu_uint32_t fla
 			continue;
 		}
 
-		if ((ev->events & EPOLLIN) && c->read.active) {
-			c->read.handler(&c->read);
+		if ((ev->events & EPOLLIN) && c->read->active) {
+			c->read->handler(c->read);
 		}
 
-		if ((ev->events & EPOLLOUT) && c->write.active) {
-			c->write.handler(&c->write);
+		if ((ev->events & EPOLLOUT) && c->write->active) {
+			c->write->handler(c->write);
 		}
 	}
+
+	if (stu_mutex_trylock(&stu_free_connections.lock)) {
+		goto done;
+	}
+
+	for (q = stu_queue_head(&stu_free_connections.queue); q != stu_queue_sentinel(&stu_free_connections.queue); /* void */) {
+		c = stu_queue_data(q, stu_connection_t, queue);
+
+		q = stu_queue_next(q);
+
+		stu_queue_remove(&c->queue);
+		stu_connection_free(c);
+	}
+
+	stu_mutex_unlock(&stu_free_connections.lock);
+
+done:
 
 	return STU_OK;
 }

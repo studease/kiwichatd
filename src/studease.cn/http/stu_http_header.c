@@ -1,7 +1,7 @@
 /*
  * stu_http_header.c
  *
- *  Created on: 2017年11月21日
+ *  Created on: 2017骞�11鏈�21鏃�
  *      Author: Tony Lau
  */
 
@@ -18,11 +18,11 @@ stu_int32_t
 stu_http_header_init_hash() {
 	stu_http_header_t *header;
 
-	if (stu_hash_init(&stu_http_headers_in_hash, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&stu_http_headers_in_hash, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		return STU_ERROR;
 	}
 
-	if (stu_hash_init(&stu_http_upstream_headers_in_hash, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&stu_http_upstream_headers_in_hash, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		return STU_ERROR;
 	}
 
@@ -62,5 +62,5 @@ stu_http_header_del(stu_http_headers_t *h, stu_str_t *key) {
 
 	hk = stu_hash_key(key->data, key->len, h->flags);
 
-	return stu_hash_remove(h, hk, key->data, key->len);
+	stu_hash_remove(h, hk, key->data, key->len);
 }

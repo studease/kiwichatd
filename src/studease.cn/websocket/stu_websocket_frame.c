@@ -134,21 +134,21 @@ stu_websocket_parse_frame(stu_websocket_request_t *r, stu_buf_t *b) {
 
 again:
 
-	b->last = p;
+	b->pos = p;
 	r->state = state;
 
 	return STU_AGAIN;
 
 done:
 
-	b->last = p;
+	b->pos = p;
 	r->state = sw_start;
 
 	return STU_OK;
 
 frame_done:
 
-	b->last = p;
+	b->pos = p;
 	r->state = sw_start;
 
 	return STU_DONE;

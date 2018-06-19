@@ -1,7 +1,7 @@
 /*
  * stu_thread.c
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
@@ -36,7 +36,7 @@ stu_thread_init(size_t stacksize) {
 }
 
 stu_int32_t
-stu_thread_create(stu_tid_t *tid, stu_fd_t *epfd, void *(*func)(void *arg), void *arg) {
+stu_thread_create(stu_tid_t *tid, stu_fd_t *evfd, void *(*func)(void *arg), void *arg) {
 	int  err;
 
 	if (stu_thread_n >= STU_THREAD_MAXIMUM) {
@@ -50,9 +50,9 @@ stu_thread_create(stu_tid_t *tid, stu_fd_t *epfd, void *(*func)(void *arg), void
 		return STU_ERROR;
 	}
 
-	if (epfd != NULL) {
-		*epfd = stu_event_create();
-		if (*epfd == -1) {
+	if (evfd != NULL) {
+		*evfd = stu_event_create();
+		if (*evfd == STU_FILE_INVALID) {
 			stu_log_error(0, "Failed to create thread event.");
 			return STU_ERROR;
 		}

@@ -18,7 +18,7 @@ typedef struct {
 	u_char      *pos;
 	u_char      *last;
 	u_char      *end;
-	stu_int32_t  size;
+	size_t       size;
 } stu_buf_t;
 
 struct stu_chain_s {

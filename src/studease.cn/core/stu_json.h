@@ -37,7 +37,7 @@ typedef struct {
 
 void  stu_json_init_hooks(stu_json_hooks_t *hooks);
 
-stu_json_t *stu_json_create(u_char type, stu_str_t *key);
+stu_json_t *stu_json_create(stu_uint8_t type, stu_str_t *key);
 stu_json_t *stu_json_create_null(stu_str_t *key);
 stu_json_t *stu_json_create_bool(stu_str_t *key, stu_bool_t bool);
 stu_json_t *stu_json_create_true(stu_str_t *key);

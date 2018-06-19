@@ -1,7 +1,7 @@
 /*
  * stu_mq.c
  *
- *  Created on: 2017年12月29日
+ *  Created on: 2017骞�12鏈�29鏃�
  *      Author: Tony Lau
  */
 
@@ -25,7 +25,7 @@ stu_mq_init(stu_str_t *path, stu_uint32_t size) {
 	}
 
 	stu_mq_path = *path;
-	rc = stu_hash_init(&stu_mq_list, size, NULL, STU_HASH_FLAGS_LOWCASE | STU_HASH_FLAGS_REPLACE);
+	rc = stu_hash_init(&stu_mq_list, size, NULL, STU_HASH_FLAGS_LOWCASE);
 
 	return rc;
 }
@@ -214,7 +214,7 @@ stu_mq_destory(stu_str_t *name) {
 
 done:
 
-	stu_log_debug(4, "mq destroyed: name= \"%s\".", name->data);
+	stu_log_debug(4, "mq destroyed: name=\"%s\".", name->data);
 
 	stu_mutex_unlock(&stu_mq_list.lock);
 }
@@ -235,7 +235,7 @@ stu_mq_get_locked(stu_str_t *name, stu_uint8_t mode, size_t size) {
 			goto done;
 		}
 
-		mq->file.name.data = stu_calloc(STU_FILE_PATH_MAX_LEN);
+		mq->file.name.data = stu_calloc(STU_MAX_PATH + 1);
 		if (mq->file.name.data == NULL) {
 			stu_log_error(stu_errno, "Failed to calloc mq file name.");
 			goto failed;
@@ -267,7 +267,7 @@ stu_mq_get_locked(stu_str_t *name, stu_uint8_t mode, size_t size) {
 			goto failed;
 		}
 
-		mq->file.fd = stu_file_open(mq->file.name.data, STU_FILE_CREATE_OR_OPEN, O_RDWR|O_APPEND, STU_FILE_DEFAULT_ACCESS);
+		mq->file.fd = stu_file_open(mq->file.name.data, STU_FILE_RDWR|STU_FILE_APPEND, STU_FILE_CREATE_OR_OPEN, STU_FILE_DEFAULT_ACCESS);
 		if (mq->file.fd == STU_FILE_INVALID) {
 			stu_log_error(stu_errno, "Failed to " stu_file_open_n " mq file \"%s\".", mq->file.name.data);
 			goto failed;
@@ -278,7 +278,11 @@ stu_mq_get_locked(stu_str_t *name, stu_uint8_t mode, size_t size) {
 			goto failed;
 		}
 
+#if (STU_LINUX)
 		mq->file.offset = mq->file.info.st_size;
+# else
+		mq->file.offset = mq->file.info.nFileIndexLow;
+#endif
 		mq->destroyed = FALSE;
 
 		stu_mq_create_page(mq, mq->file.offset, TRUE);
@@ -327,9 +331,9 @@ stu_mq_create_page(stu_mq_t *mq, off_t off, stu_bool_t reverse) {
 	mp->offset = stu_max(0, off - (off_t) mq->size);
 	stu_queue_insert_head(&mq->queue, &mp->queue);
 
-	v = pread(mq->file.fd, mp->start, mq->size, mp->offset);
+	v = stu_file_read(&mq->file, mp->start, mq->size, mp->offset);
 	if (v == -1) {
-		stu_log_error(stu_errno, "pread() \"%s\" failed.", mq->file.name.data);
+		stu_log_error(stu_errno, "Failed to read file \"%s\".", mq->file.name.data);
 		goto done;
 	}
 

@@ -1,7 +1,7 @@
 /*
  * stu_http.h
  *
- *  Created on: 2017年11月21日
+ *  Created on: 2017骞�11鏈�21鏃�
  *      Author: Tony Lau
  */
 
@@ -28,6 +28,6 @@ typedef struct stu_http_phase_s   stu_http_phase_t;
 #include "stu_http_upstream.h"
 
 stu_int32_t  stu_http_init();
-stu_int32_t  stu_http_listen(stu_fd_t epfd, uint16_t port);
+stu_int32_t  stu_http_listen(stu_fd_t evfd, uint16_t port);
 
 #endif /* STUDEASE_CN_HTTP_STU_HTTP_H_ */

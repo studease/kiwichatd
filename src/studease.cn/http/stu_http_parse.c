@@ -352,7 +352,6 @@ stu_http_parse_request_line(stu_http_request_t *r, stu_buf_t *b) {
 done:
 
 	b->pos = p + 1;
-
 	r->http_version = r->http_major * 1000 + r->http_minor;
 	r->state = sw_start;
 
@@ -727,6 +726,7 @@ stu_http_arg(stu_http_request_t *r, u_char *name, size_t len, stu_str_t *value) 
 	}
 
 	last = r->args.data + r->args.len;
+
 	for (p = r->args.data; p < last; p++) {
 		p = stu_strnstr(p, (char *) name, len - 1);
 		if (p == NULL) {

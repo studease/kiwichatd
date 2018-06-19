@@ -1,7 +1,7 @@
 /*
  * stu_upstream.h
  *
- *  Created on: 2017年11月20日
+ *  Created on: 2017骞�11鏈�20鏃�
  *      Author: Tony Lau
  */
 
@@ -27,7 +27,8 @@ typedef struct {
 
 	stu_str_t     name;
 	stu_addr_t    addr;
-	in_port_t     port;
+	uint16_t      port;
+
 	stu_uint32_t  weight;
 	time_t        timeout;
 	stu_uint32_t  max_fails;

@@ -68,7 +68,7 @@ struct stu_http_request_s {
 	stu_http_request_body_t   *request_body;
 	stu_http_request_body_t   *response_body;
 
-	// used to parse HTTP headers.
+	// used for parsing http headers.
 	uint8_t                    state;
 	stu_uint32_t               header_hash;
 	stu_uint32_t               lowcase_index;

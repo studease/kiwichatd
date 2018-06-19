@@ -48,7 +48,7 @@ stu_json_init_hooks(stu_json_hooks_t *hooks) {
 }
 
 stu_json_t *
-stu_json_create(u_char type, stu_str_t *key) {
+stu_json_create(stu_uint8_t type, stu_str_t *key) {
 	stu_json_t *item;
 	size_t      size;
 
@@ -109,8 +109,8 @@ stu_json_create_false(stu_str_t *key) {
 stu_json_t *
 stu_json_create_string(stu_str_t *key, u_char *value, size_t len) {
 	stu_json_t *item;
-	size_t      size;
 	stu_str_t  *str;
+	size_t      size;
 
 	item = stu_json_create(STU_JSON_TYPE_STRING, key);
 	if (item == NULL) {
@@ -186,12 +186,18 @@ stu_json_duplicate(stu_json_t *item, stu_bool_t recurse) {
 	stu_json_t   *copy, *child, *newchild;
 	stu_str_t    *str;
 	stu_double_t *num;
+	stu_bool_t    bool;
 
 	if (item == NULL) {
 		return NULL;
 	}
 
 	switch (item->type) {
+	case STU_JSON_TYPE_BOOLEAN:
+		bool = (stu_bool_t) item->value;
+		copy = stu_json_create_bool(&item->key, bool);
+		break;
+
 	case STU_JSON_TYPE_STRING:
 		str = (stu_str_t *) item->value;
 		copy = stu_json_create_string(&item->key, str->data, str->len);
@@ -205,7 +211,7 @@ stu_json_duplicate(stu_json_t *item, stu_bool_t recurse) {
 	case STU_JSON_TYPE_ARRAY:
 	case STU_JSON_TYPE_OBJECT:
 		copy = stu_json_create(item->type, &item->key);
-		if (recurse == TRUE && copy != NULL) {
+		if (recurse && copy != NULL) {
 			for (child = (stu_json_t *) item->value; child; child = child->next) {
 				newchild = stu_json_duplicate(child, recurse);
 				if (newchild == NULL) {
@@ -423,9 +429,7 @@ stu_json_parse(u_char *data, size_t len) {
 	stu_json_parse_value(root, data, len, &err);
 	if (err != NULL) {
 		stu_log_error(0, "Failed to parse JSON: %s", err);
-
 		stu_json_delete(root);
-
 		return NULL;
 	}
 

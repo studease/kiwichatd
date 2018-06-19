@@ -1,23 +1,24 @@
 /*
  * stu_process.c
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
-#include "../stu_config.h"
-#include "stu_core.h"
+#include "../../stu_config.h"
+#include "../stu_core.h"
+#include "stu_channel.h"
 
-stu_process_t            stu_processes[STU_PROCESS_MAXIMUM];
+stu_process_t  stu_processes[STU_PROCESS_MAXIMUM];
 
-stu_pid_t                stu_pid;
-stu_int32_t              stu_process_slot;
-stu_int32_t              stu_process_last;
-stu_socket_t             stu_channel;
+stu_pid_t      stu_pid;
+stu_int32_t    stu_process_slot;
+stu_int32_t    stu_process_last;
+stu_socket_t   stu_channel;
 
-sig_atomic_t             stu_quit;
-stu_uint32_t             stu_exiting;
-sig_atomic_t             stu_reopen;
+sig_atomic_t   stu_quit;
+stu_uint32_t   stu_exiting;
+sig_atomic_t   stu_reopen;
 
 static stu_pid_t  stu_process_spawn(stu_int32_t threads, stu_process_worker_cycle_pt proc, void *data, char *name);
 static void       stu_process_open_channel(stu_channel_t *ch);

@@ -1,7 +1,7 @@
 /*
  * stu_http_request.c
  *
- *  Created on: 2017年11月22日
+ *  Created on: 2017骞�11鏈�22鏃�
  *      Author: Tony Lau
  */
 
@@ -62,7 +62,7 @@ static stu_str_t  STU_WEBSOCKET_SIGN_KEY = stu_string("258EAFA5-E914-47DA-95CA-C
 void
 stu_http_request_read_handler(stu_event_t *ev) {
 	stu_connection_t *c;
-	stu_int32_t       n, err;
+	stu_int32_t       n;
 
 	c = (stu_connection_t *) ev->data;
 
@@ -74,30 +74,25 @@ stu_http_request_read_handler(stu_event_t *ev) {
 		c->buffer.end = c->buffer.start + STU_HTTP_REQUEST_DEFAULT_SIZE;
 		c->buffer.size = STU_HTTP_REQUEST_DEFAULT_SIZE;
 	}
-	c->buffer.pos = c->buffer.last = c->buffer.start;
-	stu_memzero(c->buffer.start, c->buffer.size);
 
-again:
+	if (c->buffer.end == c->buffer.last) {
+		c->buffer.pos = c->buffer.last = c->buffer.start;
+		stu_memzero(c->buffer.start, c->buffer.size);
+	}
 
-	n = recv(c->fd, c->buffer.last, c->buffer.size, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", c->fd, err);
-			goto again;
-		}
+	n = c->recv(c, c->buffer.last, c->buffer.end - c->buffer.last);
+	if (n == STU_AGAIN) {
+		goto done;
+	}
 
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", c->fd, err);
-			goto done;
-		}
-
-		stu_log_error(err, "Failed to recv data: fd=%d.", c->fd);
+	if (n == STU_ERROR) {
+		c->error = TRUE;
 		goto failed;
 	}
 
 	if (n == 0) {
-		stu_log_debug(4, "http client has closed connection: fd=%d.", c->fd);
+		stu_log_error(0, "http remote peer prematurely closed connection.");
+		c->close = TRUE;
 		goto failed;
 	}
 
@@ -105,7 +100,7 @@ again:
 	stu_log_debug(4, "recv: fd=%d, bytes=%d.", c->fd, n);
 
 	if (stu_strncmp(c->buffer.start, STU_FLASH_POLICY_FILE_REQUEST.data, STU_FLASH_POLICY_FILE_REQUEST.len) == 0) {
-		n = send(c->fd, STU_FLASH_POLICY_FILE.data, STU_FLASH_POLICY_FILE.len, 0);
+		n = c->send(c, STU_FLASH_POLICY_FILE.data, STU_FLASH_POLICY_FILE.len);
 		if (n == -1) {
 			stu_log_debug(4, "Failed to send policy file: fd=%d.", c->fd);
 			goto failed;
@@ -158,8 +153,8 @@ stu_http_create_request(stu_connection_t *c) {
 	r->connection = c;
 	r->header_in = r->busy ? r->busy : &c->buffer;
 
-	stu_hash_init(&r->headers_in.headers, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE);
-	stu_hash_init(&r->headers_out.headers, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE);
+	stu_hash_init(&r->headers_in.headers, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE);
+	stu_hash_init(&r->headers_out.headers, STU_HTTP_HEADER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE);
 
 	return r;
 }
@@ -189,8 +184,28 @@ stu_http_process_request_line(stu_event_t *ev) {
 
 	for ( ;; ) {
 		if (rc == STU_AGAIN) {
+			if (r->header_in->pos == r->header_in->end) {
+				rv = stu_http_alloc_large_header_buffer(r, TRUE);
+				if (rv == STU_ERROR) {
+					stu_http_finalize_request(r, STU_HTTP_INTERNAL_SERVER_ERROR);
+					return;
+				}
+
+				if (rv == STU_DECLINED) {
+					stu_log_error(0, "client sent too long URI.");
+					stu_http_finalize_request(r, STU_HTTP_REQUEST_URI_TOO_LARGE);
+					return;
+				}
+			}
+
 			n = stu_http_read_request_header(r);
-			if (n == STU_AGAIN || n == STU_ERROR) {
+			if (n == STU_AGAIN) {
+				return;
+			}
+
+			if (n == STU_ERROR) {
+				stu_log_error(0, "http failed to read request buffer.");
+				stu_http_finalize_request(r, STU_HTTP_BAD_REQUEST);
 				return;
 			}
 		}
@@ -213,29 +228,19 @@ stu_http_process_request_line(stu_event_t *ev) {
 
 			//ev->handler = stu_http_process_request_headers;
 			stu_http_process_request_headers(ev);
+
 			return;
 		}
 
-		if (rc != STU_AGAIN) {
-			stu_log_error(0, "Failed to process http request line: %s.", stu_http_status_text(STU_HTTP_BAD_REQUEST));
-			stu_http_finalize_request(r, STU_HTTP_BAD_REQUEST);
-			return;
+		if (rc == STU_AGAIN) {
+			stu_log_debug(4, "a header line parsing is still not complete.");
+			continue;
 		}
 
-		/* STU_AGAIN: a request line parsing is still incomplete */
-		if (r->header_in->pos == r->header_in->end) {
-			rv = stu_http_alloc_large_header_buffer(r, TRUE);
-			if (rv == STU_ERROR) {
-				stu_http_finalize_request(r, STU_HTTP_INTERNAL_SERVER_ERROR);
-				return;
-			}
+		stu_log_error(0, "Failed to process http request line: %s.", stu_http_status_text(STU_HTTP_BAD_REQUEST));
+		stu_http_finalize_request(r, STU_HTTP_BAD_REQUEST);
 
-			if (rv == STU_DECLINED) {
-				stu_log_error(0, "client sent too long URI.");
-				stu_http_finalize_request(r, STU_HTTP_REQUEST_URI_TOO_LARGE);
-				return;
-			}
-		}
+		return;
 	}
 }
 
@@ -290,7 +295,11 @@ stu_http_process_request_headers(stu_event_t *ev) {
 			}
 
 			n = stu_http_read_request_header(r);
-			if (n == STU_AGAIN || n == STU_ERROR) {
+			if (n == STU_AGAIN) {
+				return;
+			}
+
+			if (n == STU_ERROR) {
 				stu_log_error(0, "http failed to read request buffer.");
 				stu_http_finalize_request(r, STU_HTTP_BAD_REQUEST);
 				return;
@@ -337,12 +346,12 @@ stu_http_process_request_headers(stu_event_t *ev) {
 			}
 
 			stu_log_debug(3, "http header => \"%s: %s\".", h->key.data, h->value.data);
+
 			continue;
 		}
 
 		if (rc == STU_DONE) {
-			/* a whole header has been parsed successfully */
-			stu_log_debug(4, "http header done.");
+			stu_log_debug(4, "http header parsed.");
 
 			rc = stu_http_process_request_header(r);
 			if (rc != STU_OK) {
@@ -353,11 +362,16 @@ stu_http_process_request_headers(stu_event_t *ev) {
 
 			stu_http_process_request(r);
 
-			return;
+			if (r->header_in->pos == r->header_in->last) {
+				r->header_in->pos = r->header_in->last = r->header_in->start;
+				rc = STU_AGAIN;
+			}
+
+			continue;
 		}
 
 		if (rc == STU_AGAIN) {
-			/* a header line parsing is still not complete */
+			stu_log_debug(4, "a header line parsing is still not complete.");
 			continue;
 		}
 
@@ -373,42 +387,32 @@ static ssize_t
 stu_http_read_request_header(stu_http_request_t *r) {
 	stu_connection_t *c;
 	ssize_t           n;
-	stu_int32_t       err;
 
 	c = r->connection;
 
-	n = r->header_in->last - r->header_in->pos;
-	if (n > 0) {
-		/* buffer remains */
-		return n;
+	if (r->header_in->end == r->header_in->last) {
+		r->header_in->pos = r->header_in->last = r->header_in->start;
+		stu_memzero(r->header_in->start, r->header_in->size);
 	}
 
-again:
-
-	n = recv(c->fd, r->header_in->last, r->header_in->end - r->header_in->last, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(4, "recv trying again: fd=%d, errno=%d.", c->fd, err);
-			goto again;
-		}
-
-		if (err == EAGAIN) {
-			stu_log_debug(4, "no data received: fd=%d, errno=%d.", c->fd, err);
-		}
+	n = c->recv(c, r->header_in->last, r->header_in->end - r->header_in->last);
+	if (n == STU_AGAIN) {
+		return STU_AGAIN;
 	}
 
-	if (n == 0) {
-		c->close = TRUE;
-		stu_log_error(0, "http client prematurely closed connection.");
-	}
-
-	if (n == 0 || n == STU_ERROR) {
+	if (n == STU_ERROR) {
 		c->error = TRUE;
 		return STU_ERROR;
 	}
 
+	if (n == 0) {
+		stu_log_error(0, "http remote peer prematurely closed connection.");
+		c->close = TRUE;
+		return STU_ERROR;
+	}
+
 	r->header_in->last += n;
+	stu_log_debug(4, "recv: fd=%d, bytes=%d.", c->fd, n);
 
 	return n;
 }
@@ -531,8 +535,8 @@ stu_http_process_request(stu_http_request_t *r) {
 
 	c = r->connection;
 
-	if (c->read.timer_set) {
-		stu_timer_del(&c->read);
+	if (c->read->timer_set) {
+		stu_timer_del(c->read);
 	}
 
 	// TODO: use rwlock
@@ -585,7 +589,6 @@ stu_http_request_write_handler(stu_http_request_t *r) {
 	}
 
 	c = r->connection;
-
 	c->timedout = FALSE;
 
 	stu_log_debug(4, "http run request: \"%s\"", r->uri.data);
@@ -939,7 +942,7 @@ stu_http_send_special_response(stu_http_request_t *r, stu_int32_t rc) {
 		buf.last = stu_sprintf(buf.last, "%s/%s\n", __NAME.data, __VERSION.data);
 	}
 
-	n = send(c->fd, buf.pos, buf.last - buf.pos, 0);
+	n = c->send(c, buf.pos, buf.last - buf.pos);
 	if (n == -1) {
 		stu_log_error(stu_errno, "Failed to send http response: fd=%d.", c->fd);
 		stu_http_close_connection(c);
@@ -958,8 +961,8 @@ stu_http_request_empty_handler(stu_http_request_t *r) {
 
 void
 stu_http_free_request(stu_http_request_t *r) {
-	stu_hash_destroy(&r->headers_in.headers);
-	stu_hash_destroy(&r->headers_out.headers);
+	stu_hash_destroy(&r->headers_in.headers, NULL);
+	stu_hash_destroy(&r->headers_out.headers, NULL);
 
 	r->connection->request = NULL;
 }

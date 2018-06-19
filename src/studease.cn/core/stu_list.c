@@ -1,7 +1,7 @@
 /*
  * stu_list.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
@@ -25,19 +25,6 @@ stu_list_init(stu_list_t *list, stu_list_hooks_t *hooks) {
 	} else {
 		list->hooks.malloc_fn = hooks->malloc_fn;
 		list->hooks.free_fn = hooks->free_fn;
-	}
-}
-
-void
-stu_list_destroy(stu_list_t *list) {
-	stu_list_elt_t *elts, *e;
-	stu_queue_t    *q;
-
-	elts = &list->elts;
-
-	for (q = stu_queue_head(&elts->queue); q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
-		e = stu_queue_data(q, stu_list_elt_t, queue);
-		list->hooks.free_fn(e);
 	}
 }
 
@@ -118,12 +105,41 @@ stu_list_insert_tail(stu_list_t *list, void *value) {
 	return e;
 }
 
+
 void *
 stu_list_remove(stu_list_t *list, stu_list_elt_t *elt) {
+	void *v;
+
+	v = elt->value;
+
 	stu_queue_remove(&elt->queue);
 	list->length--;
 
-	return elt->value;
+	list->hooks.free_fn(elt);
+
+	return v;
+}
+
+void
+stu_list_destroy(stu_list_t *list, stu_list_cleanup_pt cleanup) {
+	stu_list_elt_t *elts, *e;
+	stu_queue_t    *q;
+
+	elts = &list->elts;
+
+	for (q = stu_queue_head(&elts->queue); q != stu_queue_sentinel(&elts->queue); /* void */) {
+		e = stu_queue_data(q, stu_list_elt_t, queue);
+		q = stu_queue_next(q);
+
+		if (cleanup) {
+			cleanup(e->value);
+		}
+
+		stu_queue_remove(&e->queue);
+		list->length--;
+
+		list->hooks.free_fn(e);
+	}
 }
 
 

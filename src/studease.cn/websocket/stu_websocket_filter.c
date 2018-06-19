@@ -1,7 +1,7 @@
 /*
  * stu_websocket_filter.c
  *
- *  Created on: 2017年11月29日
+ *  Created on: 2017骞�11鏈�29鏃�
  *      Author: Tony Lau
  */
 
@@ -21,7 +21,7 @@ stu_int32_t
 stu_websocket_filter_init_hash() {
 	stu_websocket_filter_t *f;
 
-	if (stu_hash_init(&stu_websocket_filter_hash, STU_WEBSOCKET_FILTER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&stu_websocket_filter_hash, STU_WEBSOCKET_FILTER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		return STU_ERROR;
 	}
 
@@ -87,17 +87,20 @@ failed:
 
 stu_int32_t
 stu_websocket_filter_del(stu_str_t *pattern, stu_websocket_filter_handler_pt handler) {
-	stu_list_t     *list;
-	stu_list_elt_t *elts, *e;
-	stu_queue_t    *q;
-	stu_uint32_t    hk;
+	stu_list_t             *list;
+	stu_list_elt_t         *elts, *e;
+	stu_queue_t            *q;
+	stu_websocket_filter_t *f;
+	stu_uint32_t            hk;
 
 	stu_mutex_lock(&stu_websocket_filter_hash.lock);
 
 	hk = stu_hash_key(pattern->data, pattern->len, stu_websocket_filter_hash.flags);
 
 	if (handler == NULL) {
-		stu_hash_remove(&stu_websocket_filter_hash, hk, pattern->data, pattern->len);
+		list = stu_hash_remove(&stu_websocket_filter_hash, hk, pattern->data, pattern->len);
+		stu_list_destroy(list, stu_free);
+		stu_free(list);
 		goto done;
 	}
 
@@ -112,8 +115,11 @@ stu_websocket_filter_del(stu_str_t *pattern, stu_websocket_filter_handler_pt han
 
 	for (q = stu_queue_head(&elts->queue); q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
 		e = stu_queue_data(q, stu_list_elt_t, queue);
-		if (e->value == handler) {
+		f = e->value;
+
+		if (f->handler == handler) {
 			stu_list_remove(list, e);
+			stu_free(f);
 			break;
 		}
 	}

@@ -1,12 +1,12 @@
 /*
  * stu_errno.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
-#include "../stu_config.h"
-#include "stu_core.h"
+#include "../../stu_config.h"
+#include "../stu_core.h"
 
 static stu_str_t *stu_sys_errlist;
 static stu_str_t  stu_unknown_error = stu_string("Unknown error");

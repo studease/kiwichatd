@@ -1,20 +1,19 @@
 /*
  * stu_atomic.h
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
-#ifndef STUDEASE_CN_CORE_STU_ATOMIC_H_
-#define STUDEASE_CN_CORE_STU_ATOMIC_H_
+#ifndef STUDEASE_CN_CORE_UNIX_STU_ATOMIC_H_
+#define STUDEASE_CN_CORE_UNIX_STU_ATOMIC_H_
 
-#include "../stu_config.h"
-#include "stu_core.h"
+#include "../../stu_config.h"
+#include "../stu_core.h"
 
 typedef volatile stu_uint32_t  stu_atomic_t;
 
 #define STU_SMP_LOCK  "lock;"
-
 #define stu_memory_barrier() __sync_synchronize()
 
 #if ( __i386__ || __i386 || __amd64__ || __amd64 )
@@ -38,4 +37,4 @@ typedef volatile stu_uint32_t  stu_atomic_t;
 #define stu_atomic_fetch_sub(ptr, val)            \
 	__sync_fetch_and_sub(ptr, val)
 
-#endif /* STUDEASE_CN_CORE_STU_ATOMIC_H_ */
+#endif /* STUDEASE_CN_CORE_UNIX_STU_ATOMIC_H_ */

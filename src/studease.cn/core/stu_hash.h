@@ -1,7 +1,7 @@
 /*
  * stu_hash.h
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
@@ -12,25 +12,26 @@
 #include "stu_core.h"
 
 #define STU_HASH_FLAGS_LOWCASE  0x01
-#define STU_HASH_FLAGS_REPLACE  0x02
 
 typedef void (*stu_hash_foreach_pt)(stu_str_t *key, void *value);
+typedef void (*stu_hash_cleanup_pt)(void *value);
+
 typedef struct stu_hash_elt_s stu_hash_elt_t;
 
 struct stu_hash_elt_s {
-	stu_queue_t     queue;
+	stu_queue_t       queue;
 
-	stu_str_t       key;
-	stu_uint32_t    key_hash;
-	void           *value;
+	stu_str_t         key;
+	stu_uint32_t      key_hash;
+	void             *value;
 
-	stu_hash_elt_t *prev;
-	stu_hash_elt_t *next;
+	stu_hash_elt_t   *prev;
+	stu_hash_elt_t   *next;
 };
 
 typedef struct {
-	void *(*malloc_fn)(size_t size);
-	void  (*free_fn)(void *ptr);
+	void           *(*malloc_fn)(size_t size);
+	void            (*free_fn)(void *ptr);
 } stu_hash_hooks_t;
 
 typedef struct {
@@ -48,10 +49,10 @@ typedef struct {
 } stu_hash_t;
 
 typedef struct {
-	stu_uint32_t  hash;
-	stu_str_t     key;
-	stu_str_t     value;
-	u_char       *lowcase_key;
+	stu_uint32_t      hash;
+	stu_str_t         key;
+	stu_str_t         value;
+	u_char           *lowcase_key;
 } stu_table_elt_t;
 
 
@@ -62,12 +63,12 @@ stu_int32_t   stu_hash_init(stu_hash_t *hash, stu_uint32_t size, stu_hash_hooks_
 
 stu_int32_t   stu_hash_insert(stu_hash_t *hash, stu_str_t *key, void *value);
 stu_int32_t   stu_hash_insert_locked(stu_hash_t *hash, stu_str_t *key, void *value);
-void         *stu_hash_find(stu_hash_t *hash, stu_uint32_t key, u_char *name, size_t len);
-void         *stu_hash_find_locked(stu_hash_t *hash, stu_uint32_t key, u_char *name, size_t len);
-void          stu_hash_remove(stu_hash_t *hash, stu_uint32_t key, u_char *name, size_t len);
-void          stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t key, u_char *name, size_t len);
-void          stu_hash_destroy(stu_hash_t *hash);
-void          stu_hash_destroy_locked(stu_hash_t *hash);
+void         *stu_hash_find(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len);
+void         *stu_hash_find_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len);
+void         *stu_hash_remove(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len);
+void         *stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len);
+void          stu_hash_destroy(stu_hash_t *hash, stu_hash_cleanup_pt cleanup);
+void          stu_hash_destroy_locked(stu_hash_t *hash, stu_hash_cleanup_pt cleanup);
 
 void  stu_hash_foreach(stu_hash_t *hash, stu_hash_foreach_pt cb);
 void  stu_hash_foreach_locked(stu_hash_t *hash, stu_hash_foreach_pt cb);

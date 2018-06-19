@@ -20,7 +20,6 @@ typedef struct stu_websocket_phase_s   stu_websocket_phase_t;
 #include "stu_websocket_request.h"
 
 stu_int32_t  stu_websocket_init();
-
 stu_bool_t   stu_websocket_is_upgrade_request(stu_http_request_t *r);
 
 #endif /* STUDEASE_CN_WEBSOCKET_STU_WEBSOCKET_H_ */

@@ -1,18 +1,18 @@
 /*
  * stu_websocket_request.c
  *
- *  Created on: 2017年11月27日
+ *  Created on: 2017骞�11鏈�27鏃�
  *      Author: Tony Lau
  */
 
 #include "stu_websocket.h"
 
-static stu_int32_t   stu_websocket_process_request_frame(stu_websocket_request_t *r);
-static stu_uint32_t  stu_websocket_read_request_buffer(stu_websocket_request_t *r);
-static stu_int32_t   stu_websocket_alloc_large_buffer(stu_websocket_request_t *r);
-static stu_int32_t   stu_websocket_filter_foreach_handler(stu_websocket_request_t *r, stu_str_t *pattern, stu_list_t *list);
-static void          stu_websocket_run_phases(stu_websocket_request_t *r);
-static void          stu_websocket_request_empty_handler(stu_websocket_request_t *r);
+static stu_int32_t  stu_websocket_process_request_frame(stu_websocket_request_t *r);
+static stu_int32_t  stu_websocket_read_request_buffer(stu_websocket_request_t *r);
+static stu_int32_t  stu_websocket_alloc_large_buffer(stu_websocket_request_t *r);
+static stu_int32_t  stu_websocket_filter_foreach_handler(stu_websocket_request_t *r, stu_str_t *pattern, stu_list_t *list);
+static void         stu_websocket_run_phases(stu_websocket_request_t *r);
+static void         stu_websocket_request_empty_handler(stu_websocket_request_t *r);
 
 extern stu_hash_t  stu_websocket_filter_hash;
 extern stu_list_t  stu_websocket_phases;
@@ -21,7 +21,7 @@ extern stu_list_t  stu_websocket_phases;
 void
 stu_websocket_request_read_handler(stu_event_t *ev) {
 	stu_connection_t *c;
-	stu_int32_t       n, err;
+	stu_int32_t       n;
 
 	c = (stu_connection_t *) ev->data;
 
@@ -33,30 +33,25 @@ stu_websocket_request_read_handler(stu_event_t *ev) {
 		c->buffer.end = c->buffer.start + STU_WEBSOCKET_REQUEST_DEFAULT_SIZE;
 		c->buffer.size = STU_WEBSOCKET_REQUEST_DEFAULT_SIZE;
 	}
-	c->buffer.pos = c->buffer.last = c->buffer.start;
-	stu_memzero(c->buffer.start, c->buffer.size);
 
-again:
+	if (c->buffer.end == c->buffer.last) {
+		c->buffer.pos = c->buffer.last = c->buffer.start;
+		stu_memzero(c->buffer.start, c->buffer.size);
+	}
 
-	n = recv(c->fd, c->buffer.last, c->buffer.size, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", c->fd, err);
-			goto again;
-		}
+	n = c->recv(c, c->buffer.last, c->buffer.end - c->buffer.last);
+	if (n == STU_AGAIN) {
+		goto done;
+	}
 
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", c->fd, err);
-			goto done;
-		}
-
-		stu_log_error(err, "Failed to recv data: fd=%d.", c->fd);
+	if (n == STU_ERROR) {
+		c->error = TRUE;
 		goto failed;
 	}
 
 	if (n == 0) {
-		stu_log_debug(4, "websocket client has closed connection: fd=%d.", c->fd);
+		stu_log_error(0, "websocket remote peer prematurely closed connection.");
+		c->close = TRUE;
 		goto failed;
 	}
 
@@ -111,8 +106,7 @@ void
 stu_websocket_process_request_frames(stu_event_t *ev) {
 	stu_websocket_request_t *r;
 	stu_connection_t        *c;
-	stu_int32_t              rc, rv;
-	stu_uint64_t             n;
+	stu_int32_t              n, rc, rv;
 
 	c = ev->data;
 	r = c->request;
@@ -148,7 +142,11 @@ stu_websocket_process_request_frames(stu_event_t *ev) {
 			}
 
 			n = stu_websocket_read_request_buffer(r);
-			if (n == STU_AGAIN || n == STU_ERROR) {
+			if (n == STU_AGAIN) {
+				return;
+			}
+
+			if (n == STU_ERROR) {
 				stu_log_error(0, "websocket failed to read request buffer.");
 				stu_websocket_finalize_request(r, STU_ERROR);
 				return;
@@ -157,13 +155,12 @@ stu_websocket_process_request_frames(stu_event_t *ev) {
 
 		rc = stu_websocket_parse_frame(r, r->frame_in);
 		if (rc == STU_OK) {
-			/* a inner frame has been parsed successfully */
+			stu_log_debug(4, "a inner frame has been parsed successfully.");
 			continue;
 		}
 
 		if (rc == STU_DONE) {
-			/* a key frame has been parsed successfully */
-			stu_log_debug(4, "websocket key frame done: opcode=%d, len=%d.", r->frames_in.opcode, r->frames_in.payload_data.size);
+			stu_log_debug(4, "websocket key frame parsed: opcode=%d, len=%d.", r->frames_in.opcode, r->frames_in.payload_data.size);
 
 			rc = stu_websocket_process_request_frame(r);
 			if (rc != STU_OK) {
@@ -174,11 +171,16 @@ stu_websocket_process_request_frames(stu_event_t *ev) {
 
 			stu_websocket_process_request(r);
 
-			return;
+			if (r->frame_in->pos == r->frame_in->last) {
+				r->frame_in->pos = r->frame_in->last = r->frame_in->start;
+				rc = STU_AGAIN;
+			}
+
+			continue;
 		}
 
 		if (rc == STU_AGAIN) {
-			/* a websocket frame parsing is still not complete */
+			stu_log_debug(4, "a websocket frame parsing is still not complete.");
 			continue;
 		}
 
@@ -189,46 +191,36 @@ stu_websocket_process_request_frames(stu_event_t *ev) {
 	}
 }
 
-static stu_uint32_t
+static stu_int32_t
 stu_websocket_read_request_buffer(stu_websocket_request_t *r) {
 	stu_connection_t *c;
-	stu_uint32_t      n;
-	stu_int32_t       err;
+	stu_int32_t       n;
 
 	c = r->connection;
 
-	n = r->frames_in.payload_data.last - r->frames_in.payload_data.pos;
-	if (n > 0) {
-		/* buffer remains */
-		return n;
+	if (r->frame_in->end == r->frame_in->last) {
+		r->frame_in->pos = r->frame_in->last = r->frame_in->start;
+		stu_memzero(r->frame_in->start, r->frame_in->size);
 	}
 
-again:
-
-	n = recv(c->fd, r->frame_in->last, r->frame_in->end - r->frame_in->last, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", c->fd, err);
-			goto again;
-		}
-
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", c->fd, err);
-		}
+	n = c->recv(c, r->frame_in->last, r->frame_in->end - r->frame_in->last);
+	if (n == STU_AGAIN) {
+		return STU_AGAIN;
 	}
 
-	if (n == 0) {
-		c->close = TRUE;
-		stu_log_error(0, "websocket client prematurely closed connection.");
-	}
-
-	if (n == 0 || n == STU_ERROR) {
+	if (n == STU_ERROR) {
 		c->error = TRUE;
 		return STU_ERROR;
 	}
 
+	if (n == 0) {
+		stu_log_error(0, "http remote peer prematurely closed connection.");
+		c->close = TRUE;
+		return STU_ERROR;
+	}
+
 	r->frame_in->last += n;
+	stu_log_debug(4, "recv: fd=%d, bytes=%d.", c->fd, n);
 
 	return n;
 }
@@ -313,8 +305,8 @@ stu_websocket_process_request(stu_websocket_request_t *r) {
 
 	c = r->connection;
 
-	if (c->read.timer_set) {
-		stu_timer_del(&c->read);
+	if (c->read->timer_set) {
+		stu_timer_del(c->read);
 	}
 
 	// TODO: use rwlock

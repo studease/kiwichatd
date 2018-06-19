@@ -1,7 +1,7 @@
 /*
  * stu_hash.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
@@ -96,16 +96,14 @@ stu_hash_insert_locked(stu_hash_t *hash, stu_str_t *key, void *value) {
 	hk = stu_hash_key(key->data, key->len, hash->flags);
 	i = hk % hash->size;
 
-	if (hash->flags & STU_HASH_FLAGS_REPLACE) {
-		for (e = hash->buckets[i]; e; e = e->next) {
-			if (e->key_hash != hk || e->key.len != key->len) {
-				continue;
-			}
+	for (e = hash->buckets[i]; e; e = e->next) {
+		if (e->key_hash != hk || e->key.len != key->len) {
+			continue;
+		}
 
-			if (stu_hash_ncmp(e->key.data, key->data, key->len, hash->flags) == 0) {
-				e->value = value;
-				goto done;
-			}
+		if (stu_hash_ncmp(e->key.data, key->data, key->len, hash->flags) == 0) {
+			e->value = value;
+			goto done;
 		}
 	}
 
@@ -132,6 +130,7 @@ stu_hash_insert_locked(stu_hash_t *hash, stu_str_t *key, void *value) {
 	}
 	e->prev = NULL;
 	e->next = hash->buckets[i];
+
 	hash->buckets[i] = e;
 	hash->length++;
 
@@ -241,19 +240,25 @@ stu_hash_find_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len
 	return NULL;
 }
 
-void
+void *
 stu_hash_remove(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len) {
+	void *value;
+
 	stu_mutex_lock(&hash->lock);
-	stu_hash_remove_locked(hash, hk, name, len);
+	value = stu_hash_remove_locked(hash, hk, name, len);
 	stu_mutex_unlock(&hash->lock);
+
+	return value;
 }
 
-void
+void *
 stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t len) {
+	void           *value;
 	stu_hash_elt_t *e;
 	stu_uint32_t    i;
 
 	i = hk % hash->size;
+	value = NULL;
 
 	for (e = hash->buckets[i]; e; e = e->next) {
 		if (e->key_hash != hk || e->key.len != len) {
@@ -261,6 +266,8 @@ stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t l
 		}
 
 		if (stu_hash_ncmp(e->key.data, name, len, hash->flags) == 0) {
+			value = e->value;
+
 			stu_queue_remove(&e->queue);
 
 			if (e->prev) {
@@ -268,6 +275,7 @@ stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t l
 			} else {
 				hash->buckets[i] = e->next;
 			}
+
 			if (e->next) {
 				e->next->prev = e->prev;
 			}
@@ -279,22 +287,22 @@ stu_hash_remove_locked(stu_hash_t *hash, stu_uint32_t hk, u_char *name, size_t l
 
 			stu_log_debug(1, "removed %p from hash: hk=%u, i=%u, name=%s.", e->value, hk, i, name);
 
-			if (hash->flags & STU_HASH_FLAGS_REPLACE) {
-				break;
-			}
+			break;
 		}
 	}
+
+	return value;
 }
 
 void
-stu_hash_destroy(stu_hash_t *hash) {
+stu_hash_destroy(stu_hash_t *hash, stu_hash_cleanup_pt cleanup) {
 	stu_mutex_lock(&hash->lock);
-	stu_hash_destroy_locked(hash);
+	stu_hash_destroy_locked(hash, cleanup);
 	stu_mutex_unlock(&hash->lock);
 }
 
 void
-stu_hash_destroy_locked(stu_hash_t *hash) {
+stu_hash_destroy_locked(stu_hash_t *hash, stu_hash_cleanup_pt cleanup) {
 	stu_list_elt_t *elts;
 	stu_hash_elt_t *e;
 	stu_queue_t    *q;
@@ -306,6 +314,10 @@ stu_hash_destroy_locked(stu_hash_t *hash) {
 		e = stu_queue_data(q, stu_hash_elt_t, queue);
 		q = stu_queue_next(q);
 
+		if (cleanup) {
+			cleanup(e->value);
+		}
+
 		stu_queue_remove(&e->queue);
 
 		if (e->prev) {
@@ -314,6 +326,7 @@ stu_hash_destroy_locked(stu_hash_t *hash) {
 			i = e->key_hash % hash->size;
 			hash->buckets[i] = e->next;
 		}
+
 		if (e->next) {
 			e->next->prev = e->prev;
 		}

@@ -1,5 +1,0 @@
-#event files
-AUX_SOURCE_DIRECTORY(. DIR_STU_EVENT_SRC)
-
-#build event
-ADD_LIBRARY(event ${DIR_STU_EVENT_SRC})

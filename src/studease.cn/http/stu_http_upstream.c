@@ -1,7 +1,7 @@
 /*
  * stu_http_upstream.c
  *
- *  Created on: 2017年11月27日
+ *  Created on: 2017骞�11鏈�27鏃�
  *      Author: Tony Lau
  */
 
@@ -18,8 +18,8 @@ static stu_int32_t  stu_http_upstream_process_unique_header_line(stu_http_reques
 static stu_int32_t  stu_http_upstream_process_content_length(stu_http_request_t *pr, stu_table_elt_t *h, stu_uint32_t offset);
 static stu_int32_t  stu_http_upstream_process_connection(stu_http_request_t *pr, stu_table_elt_t *h, stu_uint32_t offset);
 
-extern const stu_str_t   __NAME;
-extern const stu_str_t   __VERSION;
+extern const stu_str_t  __NAME;
+extern const stu_str_t  __VERSION;
 
 extern stu_http_headers_t  stu_http_upstream_headers_in_hash;
 
@@ -45,7 +45,7 @@ stu_http_upstream_read_handler(stu_event_t *ev) {
 	stu_connection_t      *pc;
 	stu_upstream_t        *u;
 	stu_upstream_server_t *s;
-	stu_int32_t            n, err;
+	stu_int32_t            n;
 
 	pc = ev->data;
 	u = pc->upstream;
@@ -59,30 +59,25 @@ stu_http_upstream_read_handler(stu_event_t *ev) {
 		pc->buffer.end = pc->buffer.start + STU_HTTP_REQUEST_DEFAULT_SIZE;
 		pc->buffer.size = STU_HTTP_REQUEST_DEFAULT_SIZE;
 	}
-	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
-	stu_memzero(pc->buffer.start, pc->buffer.size);
 
-again:
+	if (pc->buffer.end == pc->buffer.last) {
+		pc->buffer.pos = pc->buffer.last = pc->buffer.start;
+		stu_memzero(pc->buffer.start, pc->buffer.size);
+	}
 
-	n = recv(pc->fd, pc->buffer.last, pc->buffer.size, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", pc->fd, err);
-			goto again;
-		}
+	n = pc->recv(pc, pc->buffer.last, pc->buffer.size);
+	if (n == STU_AGAIN) {
+		goto done;
+	}
 
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", pc->fd, err);
-			goto done;
-		}
-
-		stu_log_error(err, "Failed to recv data: fd=%d.", pc->fd);
+	if (n == STU_ERROR) {
+		pc->error = TRUE;
 		goto failed;
 	}
 
 	if (n == 0) {
-		stu_log_debug(4, "http upstream has closed connection: fd=%d.", pc->fd);
+		stu_log_error(0, "http remote peer prematurely closed connection.");
+		pc->close = TRUE;
 		goto failed;
 	}
 
@@ -140,6 +135,8 @@ stu_http_upstream_write_handler(stu_event_t *ev) {
 
 	//stu_mutex_lock(&pc->lock);
 
+	stu_event_del(pc->write, STU_WRITE_EVENT, 0);
+
 	if (u == NULL || u->peer == NULL
 			|| u->peer->timedout || u->peer->close || u->peer->error || u->peer->destroyed) {
 		goto done;
@@ -150,7 +147,7 @@ stu_http_upstream_write_handler(stu_event_t *ev) {
 		goto failed;
 	}
 
-	n = send(pc->fd, pc->buffer.pos, pc->buffer.last - pc->buffer.pos, 0);
+	n = pc->send(pc, pc->buffer.pos, pc->buffer.last - pc->buffer.pos);
 	if (n == -1) {
 		pc->error = TRUE;
 		stu_log_error(stu_errno, "Failed to send http upstream request, u->fd=%d.", pc->fd);
@@ -158,8 +155,6 @@ stu_http_upstream_write_handler(stu_event_t *ev) {
 	}
 
 	stu_log_debug(4, "sent to http upstream %s: u->fd=%d, bytes=%d.", s->name.data, pc->fd, n);
-
-	stu_event_del(&pc->write, STU_WRITE_EVENT, 0);
 
 	goto done;
 
@@ -256,8 +251,28 @@ stu_http_upstream_process_status_line(stu_event_t *ev) {
 
 	for ( ;; ) {
 		if (rc == STU_AGAIN) {
+			if (pr->header_in->pos == pr->header_in->end) {
+				rv = stu_http_upstream_alloc_large_header_buffer(pr, TRUE);
+				if (rv == STU_ERROR) {
+					stu_http_finalize_request(r, STU_HTTP_INTERNAL_SERVER_ERROR);
+					return;
+				}
+
+				if (rv == STU_DECLINED) {
+					stu_log_error(0, "http upstream sent too long status.");
+					stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
+					return;
+				}
+			}
+
 			n = stu_http_upstream_read_response_header(pr);
-			if (n == STU_AGAIN || n == STU_ERROR) {
+			if (n == STU_AGAIN) {
+				return;
+			}
+
+			if (n == STU_ERROR) {
+				stu_log_error(0, "http upstream failed to read response buffer.");
+				stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
 				return;
 			}
 		}
@@ -269,26 +284,16 @@ stu_http_upstream_process_status_line(stu_event_t *ev) {
 			return;
 		}
 
-		if (rc != STU_AGAIN) {
-			stu_log_error(0, "Failed to process http status line: Bad Gateway.");
-			stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
-			return;
+		if (rc == STU_AGAIN) {
+			stu_log_debug(4, "a status line parsing is still incomplete.");
+			continue;
+
 		}
 
-		/* STU_AGAIN: a status line parsing is still incomplete */
-		if (pr->header_in->pos == pr->header_in->end) {
-			rv = stu_http_upstream_alloc_large_header_buffer(pr, TRUE);
-			if (rv == STU_ERROR) {
-				stu_http_finalize_request(r, STU_HTTP_INTERNAL_SERVER_ERROR);
-				return;
-			}
+		stu_log_error(0, "Failed to process http status line: %s.", stu_http_status_text(STU_HTTP_BAD_GATEWAY));
+		stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
 
-			if (rv == STU_DECLINED) {
-				stu_log_error(0, "http upstream sent too long status");
-				stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
-				return;
-			}
-		}
+		return;
 	}
 }
 
@@ -338,14 +343,20 @@ stu_http_upstream_process_response_headers(stu_event_t *ev) {
 					}
 
 					stu_log_error(0, "http upstream sent too long header line: \"%s...\"", pr->header_name_start);
-
 					stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
+
 					return;
 				}
 			}
 
 			n = stu_http_upstream_read_response_header(pr);
-			if (n == STU_AGAIN || n == STU_ERROR) {
+			if (n == STU_AGAIN) {
+				return;
+			}
+
+			if (n == STU_ERROR) {
+				stu_log_error(0, "http upstream failed to read response buffer.");
+				stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
 				return;
 			}
 		}
@@ -390,12 +401,12 @@ stu_http_upstream_process_response_headers(stu_event_t *ev) {
 			}
 
 			stu_log_debug(3, "http header => \"%s: %s\"", h->key.data, h->value.data);
+
 			continue;
 		}
 
 		if (rc == STU_DONE) {
-			/* a whole header has been parsed successfully */
-			stu_log_debug(4, "http header done.");
+			stu_log_debug(4, "http header parsed.");
 
 			rc = stu_http_upstream_process_response_header(pr);
 			if (rc != STU_OK) {
@@ -404,29 +415,37 @@ stu_http_upstream_process_response_headers(stu_event_t *ev) {
 
 			pc->upstream->process_response_pt(pc);
 
-			return;
+			if (pr->header_in->pos == pr->header_in->last) {
+				pr->header_in->pos = pr->header_in->last = pr->header_in->start;
+				rc = STU_AGAIN;
+			}
+
+			continue;
 		}
 
 		if (rc == STU_AGAIN) {
-			/* a header line parsing is still not complete */
+			stu_log_debug(4, "a header line parsing is still not complete.");
 			continue;
 		}
 
 		/* rc == STU_HTTP_PARSE_INVALID_HEADER */
 		stu_log_error(0, "http upstream sent invalid header line");
-
 		stu_http_finalize_request(r, STU_HTTP_BAD_GATEWAY);
+
 		return;
 	}
 }
 
 static ssize_t
 stu_http_upstream_read_response_header(stu_http_request_t *pr) {
-	stu_connection_t *pc;
-	ssize_t           n;
-	stu_int32_t       err;
+	stu_connection_t      *pc;
+	stu_upstream_t        *u;
+	stu_upstream_server_t *s;
+	ssize_t                n;
 
 	pc = pr->connection;
+	u = pc->upstream;
+	s = u->server;
 
 	n = pr->header_in->last - pr->header_in->pos;
 	if (n > 0) {
@@ -434,33 +453,29 @@ stu_http_upstream_read_response_header(stu_http_request_t *pr) {
 		return n;
 	}
 
-again:
+	if (pr->header_in->end == pr->header_in->last) {
+		pr->header_in->pos = pr->header_in->last = pr->header_in->start;
+		stu_memzero(pr->header_in->start, pr->header_in->size);
+	}
 
-	n = recv(pc->fd, pr->header_in->last, pr->header_in->end - pr->header_in->last, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", pc->fd, err);
-			goto again;
-		}
+	n = pc->recv(pc, pr->header_in->last, pr->header_in->end - pr->header_in->last);
+	if (n == STU_AGAIN) {
+		return STU_AGAIN;
+	}
 
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", pc->fd, err);
-		}
+	if (n == STU_ERROR) {
+		pc->error = TRUE;
+		return STU_ERROR;
 	}
 
 	if (n == 0) {
-		pc->close = TRUE;
 		stu_log_error(0, "http upstream prematurely closed connection.");
-	}
-
-	if (n == 0 || n == STU_ERROR) {
-		pc->error = TRUE;
-		stu_http_finalize_request(pc->upstream->connection->request, STU_HTTP_BAD_GATEWAY);
+		pc->close = TRUE;
 		return STU_ERROR;
 	}
 
 	pr->header_in->last += n;
+	stu_log_debug(4, "upstream recv from %s: fd=%d, bytes=%d.", s->name.data, pc->fd, n);
 
 	return n;
 }

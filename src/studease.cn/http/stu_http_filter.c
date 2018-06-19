@@ -1,7 +1,7 @@
 /*
  * stu_http_filter.c
  *
- *  Created on: 2017年11月24日
+ *  Created on: 2017骞�11鏈�24鏃�
  *      Author: Tony Lau
  */
 
@@ -21,7 +21,7 @@ stu_int32_t
 stu_http_filter_init_hash() {
 	stu_http_filter_t *f;
 
-	if (stu_hash_init(&stu_http_filter_hash, STU_HTTP_FILTER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&stu_http_filter_hash, STU_HTTP_FILTER_MAX_RECORDS, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		return STU_ERROR;
 	}
 
@@ -87,17 +87,20 @@ failed:
 
 stu_int32_t
 stu_http_filter_del(stu_str_t *pattern, stu_http_filter_handler_pt handler) {
-	stu_list_t     *list;
-	stu_list_elt_t *elts, *e;
-	stu_queue_t    *q;
-	stu_uint32_t    hk;
+	stu_list_t        *list;
+	stu_list_elt_t    *elts, *e;
+	stu_queue_t       *q;
+	stu_http_filter_t *f;
+	stu_uint32_t       hk;
 
 	stu_mutex_lock(&stu_http_filter_hash.lock);
 
 	hk = stu_hash_key(pattern->data, pattern->len, stu_http_filter_hash.flags);
 
 	if (handler == NULL) {
-		stu_hash_remove_locked(&stu_http_filter_hash, hk, pattern->data, pattern->len);
+		list = stu_hash_remove_locked(&stu_http_filter_hash, hk, pattern->data, pattern->len);
+		stu_list_destroy(list, stu_free);
+		stu_free(list);
 		goto done;
 	}
 
@@ -112,8 +115,11 @@ stu_http_filter_del(stu_str_t *pattern, stu_http_filter_handler_pt handler) {
 
 	for (q = stu_queue_head(&elts->queue); q != stu_queue_sentinel(&elts->queue); q = stu_queue_next(q)) {
 		e = stu_queue_data(q, stu_list_elt_t, queue);
-		if (e->value == handler) {
+		f = e->value;
+
+		if (f->handler == handler) {
 			stu_list_remove(list, e);
+			stu_free(f);
 			break;
 		}
 	}

@@ -29,7 +29,7 @@ struct stu_websocket_request_s {
 
 	stu_int32_t                     status;
 
-	// used for parsing request.
+	// used for parsing websocket request.
 	stu_uint8_t                     state;
 };
 

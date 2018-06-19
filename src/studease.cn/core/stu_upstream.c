@@ -1,7 +1,7 @@
 /*
  * stu_upstream.c
  *
- *  Created on: 2017年11月20日
+ *  Created on: 2017骞�11鏈�20鏃�
  *      Author: Tony Lau
  */
 
@@ -16,7 +16,7 @@ static stu_int32_t  stu_upstream_next(stu_connection_t *c);
 
 stu_int32_t
 stu_upstream_init_hash() {
-	if (stu_hash_init(&stu_upstreams, STU_UPSTREAM_MAXIMUM, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&stu_upstreams, STU_UPSTREAM_MAXIMUM, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		stu_log_error(0, "Failed to init upstream hash.");
 		return STU_ERROR;
 	}
@@ -30,7 +30,7 @@ stu_upstream_read_handler(stu_event_t *ev) {
 	stu_connection_t      *pc;
 	stu_upstream_t        *u;
 	stu_upstream_server_t *s;
-	stu_int32_t            n, err;
+	stu_int32_t            n;
 
 	pc = ev->data;
 	u = pc->upstream;
@@ -51,32 +51,25 @@ stu_upstream_read_handler(stu_event_t *ev) {
 		pc->buffer.end = pc->buffer.start + STU_UPSTREAM_BUFFER_DEFAULT_SIZE;
 		pc->buffer.size = STU_UPSTREAM_BUFFER_DEFAULT_SIZE;
 	}
-	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
-	stu_memzero(pc->buffer.start, pc->buffer.size);
 
-again:
+	if (pc->buffer.end == pc->buffer.last) {
+		pc->buffer.pos = pc->buffer.last = pc->buffer.start;
+		stu_memzero(pc->buffer.start, pc->buffer.size);
+	}
 
-	n = recv(pc->fd, pc->buffer.start, pc->buffer.size, 0);
-	if (n == -1) {
-		err = stu_errno;
-		if (err == EAGAIN) {
-			stu_log_debug(3, "no data received: fd=%d, errno=%d.", pc->fd, err);
-			goto done;
-		}
+	n = pc->recv(pc, pc->buffer.start, pc->buffer.size);
+	if (n == STU_AGAIN) {
+		goto done;
+	}
 
-		if (err == EINTR) {
-			stu_log_debug(3, "recv trying again: fd=%d, errno=%d.", pc->fd, err);
-			goto again;
-		}
-
+	if (n == STU_ERROR) {
 		pc->error = TRUE;
-		stu_log_error(err, "Failed to recv data: fd=%d.", pc->fd);
 		goto failed;
 	}
 
 	if (n == 0) {
+		stu_log_error(0, "upstream peer prematurely closed connection.");
 		pc->close = TRUE;
-		stu_log_debug(4, "upstream peer has closed connection: fd=%d.", pc->fd);
 		goto failed;
 	}
 
@@ -120,7 +113,7 @@ stu_upstream_write_handler(stu_event_t *ev) {
 		goto failed;
 	}
 
-	n = send(pc->fd, pc->buffer.pos, pc->buffer.last - pc->buffer.pos, 0);
+	n = pc->send(pc, pc->buffer.pos, pc->buffer.last - pc->buffer.pos);
 	if (n == -1) {
 		pc->error = TRUE;
 		stu_log_error(stu_errno, "Failed to send upstream request, u->fd=%d.", pc->fd);
@@ -129,7 +122,7 @@ stu_upstream_write_handler(stu_event_t *ev) {
 
 	stu_log_debug(4, "sent to upstream %s: u->fd=%d, bytes=%d.", s->name.data, pc->fd, n);
 
-	stu_event_del(&pc->write, STU_WRITE_EVENT, 0);
+	stu_event_del(pc->write, STU_WRITE_EVENT, 0);
 
 	goto done;
 
@@ -151,7 +144,7 @@ stu_upstream_create(stu_connection_t *c, u_char *name, size_t len) {
 	stu_queue_t           *q;
 	stu_uint32_t           hk;
 
-	hk = stu_hash_key(name, len, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE);
+	hk = stu_hash_key(name, len, STU_HASH_FLAGS_LOWCASE);
 	l = stu_hash_find(&stu_upstreams, hk, name, len);
 	if (l == NULL || l->length == 0) {
 		stu_log_error(0, "Upstream servers not found: \"%s\".", name);
@@ -218,15 +211,15 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 
 	if (u->server != s) {
 		if (u->server && pc->fd != STU_SOCKET_INVALID) {
-			stu_event_del(&pc->read, STU_READ_EVENT, STU_CLOSE_EVENT);
-			stu_event_del(&pc->write, STU_WRITE_EVENT, 0);
+			stu_event_del(pc->read, STU_READ_EVENT, STU_CLOSE_EVENT);
+			stu_event_del(pc->write, STU_WRITE_EVENT, 0);
 		}
 
 		u->server = s;
 	}
 
 	if (pc->fd == STU_SOCKET_INVALID) {
-		fd = socket(s->addr.sockaddr.sin_family, SOCK_STREAM, 0);
+		fd = stu_socket(s->addr.sockaddr.sin_family, SOCK_STREAM, 0);
 		if (fd == (stu_socket_t) STU_SOCKET_INVALID) {
 			stu_log_error(stu_errno, "Failed to create socket for upstream %s, fd=%d.", s->name.data, c->fd);
 			return STU_ERROR;
@@ -238,16 +231,11 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 		}
 
 		pc->fd = fd;
-		pc->read.epfd = c->read.epfd;
-		pc->write.epfd = c->write.epfd;
+		pc->read->evfd = c->read->evfd;
+		pc->write->evfd = c->write->evfd;
 
-		if (stu_event_add(&pc->read, STU_READ_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
+		if (stu_event_add_conn(pc) == STU_ERROR) {
 			stu_log_error(0, "Failed to add read event of upstream %s, fd=%d.", s->name.data, c->fd);
-			return STU_ERROR;
-		}
-
-		if (stu_event_add(&pc->write, STU_WRITE_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
-			stu_log_error(0, "Failed to add write event of upstream %s, fd=%d.", s->name.data, c->fd);
 			return STU_ERROR;
 		}
 	}
@@ -261,37 +249,37 @@ stu_upstream_connect(stu_connection_t *pc) {
 	stu_upstream_t        *u;
 	stu_upstream_server_t *s;
 	int                    rc;
-	stu_uint32_t           err;
+	stu_err_t              err;
 
 	u = pc->upstream;
 	s = u->server;
 	c = u->connection;
 
-	pc->read.handler = u->read_event_handler;
-	pc->write.handler = u->write_event_handler;
+	pc->read->handler = u->read_event_handler;
+	pc->write->handler = u->write_event_handler;
 
-	rc = connect(pc->fd, (struct sockaddr *) &s->addr.sockaddr, s->addr.socklen);
+	rc = connect(pc->fd, (const struct sockaddr *) &s->addr.sockaddr, s->addr.socklen);
 	if (rc == -1) {
 		err = stu_errno;
-		if (err != EINPROGRESS
+		if (err != STU_EINPROGRESS
 #if (STU_WIN32)
-				/* Winsock returns WSAEWOULDBLOCK (NGX_EAGAIN) */
-				&& err != EAGAIN
+				/* Winsock returns WSAEWOULDBLOCK (STU_EAGAIN) */
+				&& err != STU_EAGAIN
 #endif
 				) {
-			if (err == ECONNREFUSED
+			if (err == STU_ECONNREFUSED
 #if (STU_LINUX)
 					/*
 					 * Linux returns EAGAIN instead of ECONNREFUSED
 					 * for unix sockets if listen queue is full
 					 */
-					|| err == EAGAIN
+					|| err == STU_EAGAIN
 #endif
-					|| err == ECONNRESET
-					|| err == ENETDOWN
-					|| err == ENETUNREACH
-					|| err == EHOSTDOWN
-					|| err == EHOSTUNREACH) {
+					|| err == STU_ECONNRESET
+					|| err == STU_ENETDOWN
+					|| err == STU_ENETUNREACH
+					|| err == STU_EHOSTDOWN
+					|| err == STU_EHOSTUNREACH) {
 
 			} else {
 
@@ -320,7 +308,7 @@ stu_upstream_next(stu_connection_t *c) {
 
 	stu_atomic_fetch_add(&old->fails, 1);
 
-	hk = stu_hash_key(old->name.data, old->name.len, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE);
+	hk = stu_hash_key(old->name.data, old->name.len, STU_HASH_FLAGS_LOWCASE);
 	l = stu_hash_find(&stu_upstreams, hk, old->name.data, old->name.len);
 	if (l == NULL || l->length == 0) {
 		stu_log_error(0, "Upstream servers not found.");
@@ -418,7 +406,7 @@ stu_upstream_finalize_handler(stu_connection_t *c, stu_int32_t rc) {
 
 	u = c->upstream;
 
-	n = send(c->fd, c->buffer.start, c->buffer.last - c->buffer.start, 0);
+	n = c->send(c, c->buffer.start, c->buffer.last - c->buffer.start);
 	if (n == -1) {
 		c->error = TRUE;
 

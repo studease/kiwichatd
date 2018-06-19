@@ -1,7 +1,7 @@
 /*
  * stu_thread.h
  *
- *  Created on: 2017年11月16日
+ *  Created on: 2017骞�11鏈�16鏃�
  *      Author: Tony Lau
  */
 
@@ -23,12 +23,12 @@ typedef pthread_cond_t  stu_thread_cond_t;
 typedef struct {
 	stu_tid_t          id;
 	stu_thread_cond_t  cond;
-	stu_fd_t           epfd;
+	stu_fd_t           evfd;
 	stu_uint32_t       state;
 } stu_thread_t;
 
 stu_int32_t stu_thread_init(size_t stacksize);
-stu_int32_t stu_thread_create(stu_tid_t *tid, stu_fd_t *epfd, void *(*func)(void *arg), void *arg);
+stu_int32_t stu_thread_create(stu_tid_t *tid, stu_fd_t *evfd, void *(*func)(void *arg), void *arg);
 
 stu_int32_t stu_thread_cond_init(stu_thread_cond_t *cond);
 

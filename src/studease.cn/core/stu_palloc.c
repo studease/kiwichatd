@@ -1,7 +1,7 @@
 /*
  * stu_palloc.c
  *
- *  Created on: 2017年11月15日
+ *  Created on: 2017骞�11鏈�15鏃�
  *      Author: Tony Lau
  */
 
@@ -58,8 +58,6 @@ void
 stu_pool_destroy(stu_pool_t *pool) {
 	stu_queue_t     *q;
 	stu_pool_data_t *d;
-
-
 
 	for (q = stu_queue_head(&pool->queue); q != stu_queue_sentinel(&pool->queue); /* void */) {
 		d = stu_queue_data(q, stu_pool_data_t, queue);
