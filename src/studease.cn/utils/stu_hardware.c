@@ -5,7 +5,110 @@
  *      Author: Tony Lau
  */
 
+#if defined(__GNUC__)
+#include <cpuid.h>
+#elif defined(_MSC_VER)
+	#if _MSC_VER >= 1400  // VC2005+ supports __cpuid
+		#include <intrin.h>
+	#endif
+#endif
+
 #include "stu_utils.h"
+
+
+u_char *
+stu_hardware_get_cpuid(u_char *dst) {
+	stu_uint32_t  tmp[4];
+
+#if defined(__GNUC__)
+	__cpuid(1, tmp[0], tmp[1], tmp[2], tmp[3]);
+#elif defined(_MSC_VER)
+	#if _MSC_VER >= 1400
+		__cpuid(tmp, 1);
+	#else
+		stu_hardware_get_cpuidex(tmp, 1, 0);
+	#endif
+#endif
+
+	return stu_sprintf(dst, "%08X%08X", tmp[3], tmp[0]);
+}
+
+void
+stu_hardware_get_cpuidex(stu_int32_t dst[4], stu_uint32_t level, stu_uint32_t count) {
+#if defined(__GNUC__)
+	__cpuid_count(level, count, dst[0], dst[1], dst[2], dst[3]);
+#elif defined(_MSC_VER)
+	#if defined(_WIN64) || _MSC_VER >= 1600 // VC2008 SP1+ supports __cpuidex
+		__cpuidex(dst, level, count);
+	#else
+		if (dst == NULL) return;
+
+		_asm {
+			// load
+			mov edi, dst;
+			mov eax, level;
+			mov ecx, count;
+
+			cpuid;
+
+			// save
+			mov    [edi],    eax;
+			mov    [edi+4],  ebx;
+			mov    [edi+8],  ecx;
+			mov    [edi+12], edx;
+		}
+	#endif
+#endif
+}
+
+
+u_char *
+stu_hardware_get_serial(u_char *dst) {
+	u_char      *pos, ch;
+	stu_file_t   file;
+	u_char       cmd[STU_MAX_PATH];
+	u_char       tmp[128];
+	stu_int32_t  n;
+
+	pos = tmp;
+	stu_memzero(cmd, STU_MAX_PATH);
+	stu_memzero(tmp, 128);
+	stu_memzero(&file, sizeof(stu_file_t));
+
+	stu_str_set(&file.name, "serial.out");
+	stu_sprintf(cmd, "dmidecode -s system-serial-number > %s", file.name.data);
+
+	if (system((const char *) cmd) == -1) {
+		stu_log_error(stu_errno, "Failed to execute command \"dmidecode\".");
+		goto failed;
+	}
+
+	file.fd = stu_file_open(file.name.data, STU_FILE_RDONLY, 0, STU_FILE_DEFAULT_ACCESS);
+	if (file.fd == STU_FILE_INVALID) {
+		stu_log_error(stu_errno, "Failed to " stu_file_open_n " temp file \"%s\".", file.name.data);
+		goto failed;
+	}
+
+	n = stu_file_read(&file, tmp, 128, 0);
+	if (n == STU_ERROR) {
+		stu_log_error(stu_errno, "Failed to read temp file \"%s\".", file.name.data);
+	}
+
+	for (pos = stu_strlchr(pos, pos + n, '-') + 1; *pos; pos++) {
+		ch = stu_toupper(*pos);
+
+		if ((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F')) {
+			*dst++ = ch;
+		}
+	}
+
+	stu_file_close(file.fd);
+	stu_file_delete(file.name.data);
+
+failed:
+
+	return dst;
+}
 
 
 #if (STU_LINUX)
@@ -53,7 +156,7 @@ stu_hardware_get_macaddr(u_char *dst) {
 			goto failed;
 		}
 
-		p = stu_sprintf(dst, "%02X:%02X:%02X:%02X:%02X:%02X",
+		p = stu_sprintf(dst, "%02X%02X%02X%02X%02X%02X",
 				ifr->ifr_hwaddr.sa_data[0],
 				ifr->ifr_hwaddr.sa_data[1],
 				ifr->ifr_hwaddr.sa_data[2],

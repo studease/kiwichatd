@@ -7,18 +7,14 @@
 
 #include "kcd_core.h"
 
-stu_str_t  KCD_CONF_DEFAULT_PATH = stu_string("conf/chatd.conf");
+stu_str_t         KCD_CONF_DEFAULT_PATH = stu_string("conf/chatd.conf");
 
-extern stu_uint8_t  STU_DEBUG;
-extern stu_hash_t   stu_upstreams;
+extern stu_str_t  KCD_LICENSE_SERVERS;
+
+extern stu_uint8_t                STU_DEBUG;
+extern stu_hash_t                 stu_upstreams;
 extern stu_str_t                  stu_http_root;
 extern stu_http_method_bitmask_t  stu_http_upstream_method_mask[];
-
-static kcd_edition_mask_t  kcd_edition_mask[] = {
-	{ stu_string("preview"), PREVIEW },
-	{ stu_string("enterprise"), ENTERPRISE },
-	{ stu_null_string, 0x00 }
-};
 
 static kcd_mode_mask_t  kcd_mode_mask[] = {
 	{ stu_string("smooth"), STU_MQ_MODE_SMOOTH },
@@ -32,7 +28,7 @@ static stu_str_t  KCD_CONF_DEFAULT_RECORDS = stu_string("histories/%s.kcm");
 static stu_str_t  KCD_CONF_LOG = stu_string("log");
 static stu_str_t  KCD_CONF_PID = stu_string("pid");
 
-static stu_str_t  KCD_CONF_EDITION = stu_string("edition");
+static stu_str_t  KCD_CONF_LICENSE = stu_string("license");
 static stu_str_t  KCD_CONF_MODE    = stu_string("mode");
 
 static stu_str_t  KCD_CONF_MASTER_PROCESS   = stu_string("master_process");
@@ -52,7 +48,8 @@ static stu_str_t  KCD_CONF_SERVER_PUSH_STAT          = stu_string("push_stat");
 static stu_str_t  KCD_CONF_SERVER_PUSH_STAT_INTERVAL = stu_string("push_stat_interval");
 
 static stu_str_t  KCD_CONF_IDENT              = stu_string("ident");
-static stu_str_t  KCD_CONF_STAT               = stu_string("stat");
+static stu_str_t  KCD_CONF_STATS              = stu_string("stats");
+static stu_str_t  KCD_CONF_CHECK              = stu_string("check");
 static stu_str_t  KCD_CONF_UPSTREAM_PROTOCOL  = stu_string("protocol");
 static stu_str_t  KCD_CONF_UPSTREAM_METHOD    = stu_string("method");
 static stu_str_t  KCD_CONF_UPSTREAM_TARGET    = stu_string("target");
@@ -62,8 +59,8 @@ static stu_str_t  KCD_CONF_UPSTREAM_WEIGHT    = stu_string("weight");
 static stu_str_t  KCD_CONF_UPSTREAM_TIMEOUT   = stu_string("timeout");
 static stu_str_t  KCD_CONF_UPSTREAM_MAX_FAILS = stu_string("max_fails");
 
-static stu_int32_t    kcd_conf_get_default(kcd_conf_t *conf);
-static stu_int32_t    kcd_conf_copy_upstream_servers(stu_list_t *list, stu_str_t *name, stu_json_t *item);
+static stu_int32_t  kcd_conf_get_default(kcd_conf_t *conf);
+static stu_int32_t  kcd_conf_copy_upstream_servers(stu_list_t *list, stu_str_t *name, stu_json_t *item);
 
 
 stu_int32_t
@@ -71,11 +68,12 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 	stu_json_t         *root, *item, *sub;
 	stu_str_t          *v_string;
 	stu_double_t       *v_double;
-	kcd_edition_mask_t *e;
 	kcd_mode_mask_t    *m;
 	u_char              tmp[KCD_CONF_MAX_SIZE];
 	stu_file_t          file;
+	stu_int32_t         rc;
 
+	rc = STU_ERROR;
 	stu_memzero(&file, sizeof(stu_file_t));
 	stu_memzero(tmp, KCD_CONF_MAX_SIZE);
 
@@ -132,17 +130,19 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 		conf->pid.name.len = v_string->len;
 	}
 
-	// edition
-	item = stu_json_get_object_item_by(root, &KCD_CONF_EDITION);
+	// license
+	item = stu_json_get_object_item_by(root, &KCD_CONF_LICENSE);
 	if (item && item->type == STU_JSON_TYPE_STRING) {
 		v_string = (stu_str_t *) item->value;
 
-		for (e = kcd_edition_mask; e->name.len; e++) {
-			if (stu_strncasecmp(v_string->data, e->name.data, e->name.len) == 0) {
-				conf->edition = e->mask;
-				break;
-			}
+		conf->license.data = stu_calloc(v_string->len + 1);
+		if (conf->license.data == NULL) {
+			stu_log_error(0, "Failed to calloc license data.");
+			goto failed;
 		}
+
+		stu_strncpy(conf->license.data, v_string->data, v_string->len);
+		conf->license.len = v_string->len;
 	}
 
 	// mode
@@ -285,26 +285,32 @@ kcd_conf_parse_file(kcd_conf_t *conf, u_char *name) {
 		}
 	}
 
-	// stat
-	item = stu_json_get_object_item_by(root, &KCD_CONF_STAT);
+	// stats
+	item = stu_json_get_object_item_by(root, &KCD_CONF_STATS);
 	if (item && item->type == STU_JSON_TYPE_ARRAY) {
-		if (kcd_conf_copy_upstream_servers(&conf->stat, &KCD_CONF_STAT, item) == STU_ERROR) {
-			stu_log_error(0, "Failed to copy upstream server list: name=\"%s\".", KCD_CONF_STAT.data);
+		if (kcd_conf_copy_upstream_servers(&conf->stats, &KCD_CONF_STATS, item) == STU_ERROR) {
+			stu_log_error(0, "Failed to copy upstream server list: name=\"%s\".", KCD_CONF_STATS.data);
 			goto failed;
 		}
 	}
 
-	stu_file_close(file.fd);
-	stu_json_delete(root);
+	// check
+	item = stu_json_parse(KCD_LICENSE_SERVERS.data, KCD_LICENSE_SERVERS.len);
+	if (item && item->type == STU_JSON_TYPE_ARRAY) {
+		if (kcd_conf_copy_upstream_servers(&conf->check, &KCD_CONF_CHECK, item) == STU_ERROR) {
+			stu_log_error(0, "Failed to copy upstream server list: name=\"%s\".", KCD_CONF_CHECK.data);
+			goto failed;
+		}
+	}
 
-	return STU_OK;
+	rc = STU_OK;
 
 failed:
 
 	stu_file_close(file.fd);
 	stu_json_delete(root);
 
-	return STU_ERROR;
+	return rc;
 }
 
 static stu_int32_t
@@ -430,7 +436,7 @@ kcd_conf_get_default(kcd_conf_t *conf) {
 	stu_gettimeofday(&tv);
 	stu_localtime(tv.tv_sec, &tm);
 
-	conf->log.name.data = stu_calloc(STU_FILE_PATH_MAX_LEN);
+	conf->log.name.data = stu_calloc(STU_MAX_PATH);
 	if (conf->log.name.data == NULL) {
 		stu_log_error(0, "Failed to calloc log file name.");
 		return STU_ERROR;
@@ -468,7 +474,8 @@ kcd_conf_get_default(kcd_conf_t *conf) {
 
 	// upstream
 	stu_list_init(&conf->ident, NULL);
-	stu_list_init(&conf->stat, NULL);
+	stu_list_init(&conf->stats, NULL);
+	stu_list_init(&conf->check, NULL);
 
 	if (stu_upstream_init_hash() == STU_ERROR) {
 		return STU_ERROR;
@@ -479,8 +486,13 @@ kcd_conf_get_default(kcd_conf_t *conf) {
 		return STU_ERROR;
 	}
 
-	if (stu_hash_insert(&stu_upstreams, &KCD_CONF_STAT, &conf->stat) == STU_ERROR) {
-		stu_log_error(0, "Failed to insert upstream list into hash, name=\"%d\".", KCD_CONF_STAT.data);
+	if (stu_hash_insert(&stu_upstreams, &KCD_CONF_STATS, &conf->stats) == STU_ERROR) {
+		stu_log_error(0, "Failed to insert upstream list into hash, name=\"%d\".", KCD_CONF_STATS.data);
+		return STU_ERROR;
+	}
+
+	if (stu_hash_insert(&stu_upstreams, &KCD_CONF_CHECK, &conf->check) == STU_ERROR) {
+		stu_log_error(0, "Failed to insert upstream list into hash, name=\"%d\".", KCD_CONF_CHECK.data);
 		return STU_ERROR;
 	}
 

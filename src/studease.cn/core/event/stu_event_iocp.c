@@ -12,7 +12,7 @@ extern stu_connection_t  stu_free_connections;
 
 stu_fd_t
 stu_event_iocp_create() {
-	stu_fd_t fd;
+	stu_fd_t  fd;
 
 	fd = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	if (fd == NULL) {

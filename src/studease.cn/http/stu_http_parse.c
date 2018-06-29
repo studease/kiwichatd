@@ -370,7 +370,8 @@ stu_http_parse_header_line(stu_http_request_t *r, stu_buf_t *b, stu_uint32_t all
 		sw_space_after_value,
 		sw_ignore_line,
 		sw_almost_done,
-		sw_header_almost_done
+		sw_header_almost_done,
+		sw_header_done
 	} state;
 
 	/* the last '\0' is not needed because string is zero terminated */
@@ -404,7 +405,8 @@ stu_http_parse_header_line(stu_http_request_t *r, stu_buf_t *b, stu_uint32_t all
 				state = sw_header_almost_done;
 				break;
 			case LF:
-				r->header_end = p;
+				r->header_end = p++;
+				state = sw_header_done;
 				goto header_done;
 			default:
 				state = sw_name;
@@ -585,11 +587,16 @@ stu_http_parse_header_line(stu_http_request_t *r, stu_buf_t *b, stu_uint32_t all
 		case sw_header_almost_done:
 			switch (ch) {
 			case LF:
+				p++;
+				state = sw_header_done;
 				goto header_done;
 			default:
 				return STU_ERROR;
 			}
 			break;
+
+		case sw_header_done:
+			goto header_done;
 		}
 	}
 
@@ -611,8 +618,7 @@ done:
 
 header_done:
 
-	b->pos = p + 1;
-	r->state = sw_start;
+	b->pos = p;
 
 	return STU_DONE;
 }

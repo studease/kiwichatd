@@ -36,7 +36,7 @@ int stu_blocking(stu_socket_t s);
 #define stu_socket_close_n     "closesocket()"
 
 int stu_tcp_push(stu_socket_t s);
-#define stu_tcp_push_n           "tcp_push()"
+#define stu_tcp_push_n         "tcp_push()"
 
 
 #ifndef WSAID_ACCEPTEX

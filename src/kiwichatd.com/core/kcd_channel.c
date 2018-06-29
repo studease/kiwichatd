@@ -10,12 +10,12 @@
 stu_hash_t          kcd_channels;
 
 extern kcd_cycle_t *kcd_cycle;
-extern stu_fd_t     kcd_epfd;
+extern stu_fd_t     kcd_evfd;
 
 static stu_connection_t *kcd_channel_timer_push_user;
 static stu_connection_t *kcd_channel_timer_push_stat;
 
-static stu_str_t    KCD_UPSTREAM_STAT = stu_string("stat");
+static stu_str_t    KCD_UPSTREAM_STATS = stu_string("stats");
 
 static stu_int32_t  kcd_channel_init(kcd_channel_t *ch, stu_str_t *id);
 static void         kcd_channel_remove_exactly(kcd_channel_t *ch, kcd_user_t *user);
@@ -33,7 +33,7 @@ static void         kcd_channel_push_stat_finalize_handler(stu_connection_t *c, 
 
 stu_int32_t
 kcd_channel_init_hash() {
-	if (stu_hash_init(&kcd_channels, KCD_CHANNEL_LIST_DEFAULT_SIZE, NULL, STU_HASH_FLAGS_LOWCASE|STU_HASH_FLAGS_REPLACE) == STU_ERROR) {
+	if (stu_hash_init(&kcd_channels, KCD_CHANNEL_LIST_DEFAULT_SIZE, NULL, STU_HASH_FLAGS_LOWCASE) == STU_ERROR) {
 		stu_log_error(0, "Failed to init channle hash.");
 		return STU_ERROR;
 	}
@@ -139,7 +139,7 @@ kcd_channel_remove_locked(kcd_channel_t *ch, kcd_user_t *user) {
 	if (ch->userlist.length == 0) {
 		stu_mutex_lock(&kcd_channels.lock);
 
-		stu_hash_destroy_locked(&ch->userlist);
+		stu_hash_destroy_locked(&ch->userlist, ch->userlist.hooks.free_fn);
 
 		hk = stu_hash_key(ch->id.data, ch->id.len, kcd_channels.flags);
 		stu_hash_remove_locked(&kcd_channels, hk, ch->id.data, ch->id.len);
@@ -206,7 +206,6 @@ kcd_channel_broadcast(kcd_channel_t *ch, u_char *data, size_t len, off_t off) {
 	stu_connection_t      *c;
 	u_char                 tmp[KCD_REQUEST_DEFAULT_SIZE];
 	stu_websocket_frame_t  f;
-	stu_socket_t           fd;
 	stu_int32_t            n;
 	size_t                 size;
 
@@ -241,17 +240,15 @@ kcd_channel_broadcast(kcd_channel_t *ch, u_char *data, size_t len, off_t off) {
 			continue;
 		}
 
-		fd = stu_atomic_fetch_add(&c->fd, 0);
-
-		n = send(fd, f.payload_data.start, size, 0);
+		n = c->send(c, f.payload_data.start, size);
 		if (n == -1) {
-			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, fd);
+			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, c->fd);
 
 			if (kcd_cycle->conf.mode == STU_MQ_MODE_STRICT) {
 				// TODO: atomic set
-				c->write.handler = kcd_channel_slow_write_handler;
+				c->write->handler = kcd_channel_slow_write_handler;
 
-				if (stu_event_add(&c->write, STU_WRITE_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
+				if (stu_event_add(c->write, STU_WRITE_EVENT, STU_CLEAR_EVENT) == STU_ERROR) {
 					c->error = TRUE;
 					continue;
 				}
@@ -305,9 +302,9 @@ kcd_channel_slow_write_handler(stu_event_t *ev) {
 		f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
 		size = f.payload_data.last - f.payload_data.start;
 
-		n = send(c->fd, f.payload_data.start, size, 0);
+		n = c->send(c, f.payload_data.start, size);
 		if (n == -1) {
-			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, fd);
+			//stu_log_error(stu_errno, "Failed to broadcast in channel \"%s\": , fd=%d.", ch->id.data, c->fd);
 			break;
 		}
 
@@ -329,12 +326,12 @@ kcd_channel_add_push_user_timer(stu_msec_t timer) {
 			return STU_ERROR;
 		}
 
-		c->write.handler = kcd_channel_push_user_handler;
+		c->write->handler = kcd_channel_push_user_handler;
 
 		kcd_channel_timer_push_user = c;
 	}
 
-	stu_timer_add_locked(&c->write, timer);
+	stu_timer_add_locked(c->write, timer);
 
 	return STU_OK;
 }
@@ -352,15 +349,15 @@ kcd_channel_add_push_stat_timer(stu_msec_t timer) {
 			return STU_ERROR;
 		}
 
-		c->read.epfd = kcd_epfd;
-		c->write.epfd = kcd_epfd;
+		c->read->evfd = kcd_evfd;
+		c->write->evfd = kcd_evfd;
 
-		c->write.handler = kcd_channel_push_stat_handler;
+		c->write->handler = kcd_channel_push_stat_handler;
 
 		kcd_channel_timer_push_stat = c;
 	}
 
-	stu_timer_add_locked(&c->write, timer);
+	stu_timer_add_locked(c->write, timer);
 
 	return STU_OK;
 }
@@ -373,7 +370,7 @@ kcd_channel_push_user_handler(stu_event_t *ev) {
 
 	stu_hash_foreach(&kcd_channels, kcd_channel_push_user);
 
-	stu_timer_add_locked(&c->write, kcd_cycle->conf.push_user_interval);
+	stu_timer_add_locked(c->write, kcd_cycle->conf.push_user_interval);
 }
 
 static void
@@ -422,14 +419,14 @@ kcd_channel_push_user(stu_str_t *id, void *value) {
 	stu_mutex_unlock(&ch->userlist.lock);
 }
 
-void
+static void
 kcd_channel_push_stat_handler(stu_event_t *ev) {
 	stu_connection_t *c;
 
 	c = kcd_channel_timer_push_stat;
 
-	if (stu_upstream_create(c, KCD_UPSTREAM_STAT.data, KCD_UPSTREAM_STAT.len) == STU_ERROR) {
-		stu_log_error(0, "Failed to create http upstream \"%s\".", KCD_UPSTREAM_STAT.data);
+	if (stu_upstream_create(c, KCD_UPSTREAM_STATS.data, KCD_UPSTREAM_STATS.len) == STU_ERROR) {
+		stu_log_error(0, "Failed to create http upstream \"%s\".", KCD_UPSTREAM_STATS.data);
 		return;
 	}
 
@@ -445,7 +442,7 @@ kcd_channel_push_stat_handler(stu_event_t *ev) {
 	c->upstream->cleanup_pt = stu_http_upstream_cleanup;
 
 	if (stu_upstream_connect(c->upstream->peer) != STU_OK) {
-		stu_log_error(0, "Failed to connect http upstream \"%s\".", KCD_UPSTREAM_STAT.data);
+		stu_log_error(0, "Failed to connect http upstream \"%s\".", KCD_UPSTREAM_STATS.data);
 	}
 }
 
@@ -459,7 +456,6 @@ kcd_channel_push_stat_generate_request(stu_connection_t *pc) {
 	stu_upstream_t     *u;
 	stu_connection_t   *c;
 	stu_http_request_t *pr;
-	stu_buf_t          *body;
 	stu_int32_t         total;
 
 	u = pc->upstream;
@@ -481,23 +477,10 @@ kcd_channel_push_stat_generate_request(stu_connection_t *pc) {
 	/* create request body */
 	if (pc->buffer.start == NULL) {
 		pc->buffer.start = (u_char *) stu_pcalloc(pc->pool, STU_HTTP_REQUEST_LARGE_SIZE);
-		pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 		pc->buffer.end = pc->buffer.start + STU_HTTP_REQUEST_LARGE_SIZE;
 		pc->buffer.size = STU_HTTP_REQUEST_LARGE_SIZE;
 	}
 	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
-
-	pr->request_body = (stu_http_request_body_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_http_request_body_t);
-
-	pr->request_body->bufs = (stu_chain_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_chain_t);
-
-	pr->request_body->bufs->buf = (stu_buf_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_buf_t);
-
-	body = pr->request_body->bufs->buf;
-	body->start = body->pos = pc->buffer.last;
 
 	/* generate request body */
 	jo = stu_json_create_object(NULL);
@@ -531,10 +514,8 @@ kcd_channel_push_stat_generate_request(stu_connection_t *pc) {
 	pc->buffer.last = stu_json_stringify(jo, pc->buffer.last);
 	stu_json_delete(jo);
 
-	body->last = body->end = pc->buffer.last;
-	body->size = body->end - body->start;
-
-	pr->headers_out.content_length_n = body->size;
+	pr->request_body = pc->buffer;
+	pr->request_body.size = pr->request_body.last - pr->request_body.pos;
 
 	return stu_http_upstream_generate_request(pc);
 }
@@ -563,5 +544,5 @@ static void
 kcd_channel_push_stat_finalize_handler(stu_connection_t *c, stu_int32_t rc) {
 	c->upstream->cleanup_pt(c);
 
-	stu_timer_add_locked(&c->write, kcd_cycle->conf.push_stat_interval);
+	stu_timer_add_locked(c->write, kcd_cycle->conf.push_stat_interval);
 }

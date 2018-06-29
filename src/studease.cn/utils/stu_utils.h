@@ -12,5 +12,6 @@
 #include "../core/stu_core.h"
 
 #include "stu_endian.h"
+#include "stu_hardware.h"
 
 #endif /* STUDEASE_CN_UTILS_STU_UTILS_H_ */

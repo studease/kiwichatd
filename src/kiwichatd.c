@@ -4,7 +4,7 @@
  Author      : Tony Lau
  Version     : 2.x.xx
  Copyright   : kiwichatd.com
- Description : Websocket chat server.
+ Description : High-performance Websocket Chat Server
  ============================================================================
  */
 
@@ -31,6 +31,12 @@ int main(void) {
 	// server info
 	stu_log("GCC " __VERSION__);
 	stu_log("%s/%s (" __TIME__ ", " __DATE__ ")", __NAME.data, __VERSION.data);
+
+	// license
+	if (kcd_license_ckeck(conf) == STU_ERROR) {
+		stu_log_error(0, "Failed to check license: %s.", conf->license.data);
+		return EXIT_FAILURE;
+	}
 
 	// create pid
 	if (kcd_cycle_create_pidfile(&conf->pid) == STU_ERROR) {

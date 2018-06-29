@@ -17,7 +17,7 @@
 #include <md5.h>
 #endif
 
-typedef MD5_CTX  stu_md5_t;
+typedef MD5_CTX  stu_md5_ctx_t;
 
 #define stu_md5_init    MD5_Init
 #define stu_md5_update  MD5_Update

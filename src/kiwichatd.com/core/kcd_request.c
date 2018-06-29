@@ -194,7 +194,7 @@ kcd_upgrade_preview_handler(stu_http_request_t *r) {
 	}
 
 	ch = user->channel;
-	c->read.handler = kcd_request_read_handler;
+	c->read->handler = kcd_request_read_handler;
 
 	if (stat && (user->role & 0xF0)) {
 		stu_atomic_test_set(&ch->state, stat);
@@ -223,7 +223,6 @@ kcd_upgrade_enterprise_handler(stu_http_request_t *r) {
 	kcd_user_t         *user;
 	stu_upstream_t     *u;
 	stu_http_request_t *pr;
-	stu_buf_t          *body;
 	u_char              chan_s[KCD_CHANNEL_ID_MAX_LEN + 1];
 	u_char              token_s[KCD_USER_TOKEN_MAX_LEN + 1];
 	stu_str_t           token, chan;
@@ -289,28 +288,14 @@ kcd_upgrade_enterprise_handler(stu_http_request_t *r) {
 	pr = pc->request;
 	pr->uri = u->server->target;
 
-	/* create request body */
+	/* generate request body */
 	if (pc->buffer.start == NULL) {
 		pc->buffer.start = (u_char *) stu_pcalloc(pc->pool, STU_HTTP_REQUEST_DEFAULT_SIZE);
-		pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 		pc->buffer.end = pc->buffer.start + STU_HTTP_REQUEST_DEFAULT_SIZE;
 		pc->buffer.size = STU_HTTP_REQUEST_DEFAULT_SIZE;
 	}
 	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 
-	pr->request_body = (stu_http_request_body_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_http_request_body_t);
-
-	pr->request_body->bufs = (stu_chain_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_chain_t);
-
-	pr->request_body->bufs->buf = (stu_buf_t *) pc->buffer.last;
-	pc->buffer.last += sizeof(stu_buf_t);
-
-	body = pr->request_body->bufs->buf;
-	body->start = body->pos = pc->buffer.last;
-
-	/* generate request body */
 	switch (u->server->method) {
 	case STU_HTTP_GET:
 		pc->buffer.last = stu_sprintf(pc->buffer.last, "?%s=%s&%s=%s",
@@ -334,7 +319,7 @@ kcd_upgrade_enterprise_handler(stu_http_request_t *r) {
 		goto done;
 	}
 
-	body->last = body->end = pc->buffer.last;
+	pr->request_body = pc->buffer;
 
 	/* connect ident upstream */
 	if (stu_upstream_connect(pc) == STU_ERROR) {
@@ -534,7 +519,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 			f.payload_data.last = stu_websocket_encode_frame(&f, f.payload_data.start);
 			size = f.payload_data.last - f.payload_data.start;
 
-			n = send(c->fd, f.payload_data.start, size, 0);
+			n = c->send(c, f.payload_data.start, size);
 			if (n == -1) {
 				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", user->id.data, c->fd);
 			}
@@ -544,7 +529,7 @@ kcd_request_analyze_protocol(stu_websocket_request_t *r) {
 				goto uni_done;
 			}
 
-			n = send(mc->fd, f.payload_data.start, size, 0);
+			n = c->send(mc, f.payload_data.start, size);
 			if (n == -1) {
 				//stu_log_error(stu_errno, "Failed to send uni message to \"%s\": , fd=%d.", mate->id.data, mc->fd);
 			}
@@ -624,7 +609,7 @@ kcd_request_send_error(stu_websocket_request_t *r, stu_int32_t err, stu_double_t
 	stu_json_delete(jo);
 
 	/* send frame */
-	n = send(c->fd, f.payload_data.pos, f.payload_data.last - f.payload_data.pos, 0);
+	n = c->send(c, f.payload_data.pos, f.payload_data.last - f.payload_data.pos);
 	if (n == -1) {
 		stu_log_error(stu_errno, "Failed to send kcd error: fd=%d.", c->fd);
 		return;
@@ -661,7 +646,7 @@ kcd_request_send_ident(stu_connection_t *c) {
 	f.payload_data.pos = f.payload_data.start;
 
 	/* send frame */
-	n = send(c->fd, f.payload_data.pos, f.payload_data.last - f.payload_data.pos, 0);
+	n = c->send(c, f.payload_data.pos, f.payload_data.last - f.payload_data.pos);
 	if (n == -1) {
 		stu_log_error(stu_errno, "Failed to send kcd ident: fd=%d, id=\"%s\", ch=\"%s\".", c->fd, user->id.data, ch->id.data);
 		return STU_ERROR;
@@ -724,7 +709,7 @@ kcd_request_send_history(stu_connection_t *c, stu_int32_t n) {
 
 		size = f.payload_data.last - f.payload_data.start;
 
-		v = send(c->fd, f.payload_data.start, size, 0);
+		v = c->send(c, f.payload_data.start, size);
 		if (v == -1) {
 			//stu_log_error(stu_errno, "Failed to send cache: fd=%d.", fd);
 			break;
@@ -757,7 +742,7 @@ kcd_request_read_handler(stu_event_t *ev) {
 
 again:
 
-	n = recv(c->fd, c->buffer.last, c->buffer.size, 0);
+	n = c->recv(c, c->buffer.last, c->buffer.size);
 	if (n == -1) {
 		err = stu_errno;
 		if (err == EINTR) {
@@ -889,7 +874,7 @@ kcd_request_analyze_ident_upstream_response(stu_connection_t *pc) {
 		goto failed;
 	}
 
-	c->read.handler = kcd_request_read_handler;
+	c->read->handler = kcd_request_read_handler;
 
 	/* ident response */
 	if (kcd_request_send_ident(c) == STU_ERROR) {
@@ -958,4 +943,3 @@ kcd_close_connection(stu_connection_t *c) {
 
 	stu_websocket_close_connection(c);
 }
-

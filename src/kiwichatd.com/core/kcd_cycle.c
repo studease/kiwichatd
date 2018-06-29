@@ -65,6 +65,12 @@ kcd_cycle_init() {
 		return STU_ERROR;
 	}
 
+	// license
+	if (kcd_license_init() == STU_ERROR) {
+		stu_log_error(0, "Failed to init license.");
+		return STU_ERROR;
+	}
+
 	// log
 	if (stu_log_init((stu_file_t *) &kcd_cycle->conf.log) == STU_ERROR) {
 		stu_log_error(0, "Failed to init log.");
@@ -80,6 +86,12 @@ kcd_cycle_init() {
 	// event
 	if (stu_event_init() == STU_ERROR) {
 		stu_log_error(0, "Failed to init event.");
+		return STU_ERROR;
+	}
+
+	// connection
+	if (stu_connection_init() == STU_ERROR) {
+		stu_log_error(0, "Failed to init connection.");
 		return STU_ERROR;
 	}
 
@@ -123,9 +135,9 @@ kcd_cycle_init() {
 
 stu_int32_t
 kcd_cycle_create_pidfile(stu_file_t *pid) {
-	u_char  tmp[STU_FILE_PATH_MAX_LEN];
+	u_char  tmp[STU_MAX_PATH];
 
-	stu_memzero(tmp, STU_FILE_PATH_MAX_LEN);
+	stu_memzero(tmp, STU_MAX_PATH);
 
 	pid->fd = stu_file_open(pid->name.data, STU_FILE_RDWR, STU_FILE_TRUNCATE, STU_FILE_DEFAULT_ACCESS);
 	if (pid->fd == STU_FILE_INVALID) {

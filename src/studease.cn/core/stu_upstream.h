@@ -55,6 +55,8 @@ struct stu_upstream_s {
 	stu_int32_t              (*analyze_response_pt)(stu_connection_t *pc);
 	void                     (*finalize_handler_pt)(stu_connection_t *c, stu_int32_t rc);
 	void                     (*cleanup_pt)(stu_connection_t *c);
+
+	unsigned                   request_sent:1;
 };
 
 stu_int32_t  stu_upstream_init_hash();

@@ -16,6 +16,7 @@ typedef struct {
 	stu_file_t     log;
 	stu_file_t     pid;
 
+	stu_str_t      license;
 	kcd_edition_t  edition;
 	stu_uint8_t    mode;
 
@@ -38,7 +39,8 @@ typedef struct {
 	stu_msec_t     push_stat_interval; // seconds
 
 	stu_list_t     ident;              // stu_upstream_server_t *
-	stu_list_t     stat;               // stu_upstream_server_t *
+	stu_list_t     stats;              // stu_upstream_server_t *
+	stu_list_t     check;              // stu_upstream_server_t *
 } kcd_conf_t;
 
 stu_int32_t  kcd_conf_parse_file(kcd_conf_t *conf, u_char *name);

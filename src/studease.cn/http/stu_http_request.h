@@ -40,10 +40,6 @@ typedef struct {
 	stu_uint16_t               mask;
 } stu_http_method_bitmask_t;
 
-typedef struct {
-	stu_chain_t               *bufs;
-} stu_http_request_body_t;
-
 struct stu_http_request_s {
 	stu_connection_t          *connection;
 
@@ -65,8 +61,8 @@ struct stu_http_request_s {
 
 	stu_http_headers_in_t      headers_in;
 	stu_http_headers_out_t     headers_out;
-	stu_http_request_body_t   *request_body;
-	stu_http_request_body_t   *response_body;
+	stu_buf_t                  request_body;
+	stu_buf_t                  response_body;
 
 	// used for parsing http headers.
 	uint8_t                    state;

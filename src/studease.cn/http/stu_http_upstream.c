@@ -124,50 +124,8 @@ stu_http_upstream_reinit_request(stu_connection_t *pc) {
 
 void
 stu_http_upstream_write_handler(stu_event_t *ev) {
-	stu_connection_t      *pc;
-	stu_upstream_t        *u;
-	stu_upstream_server_t *s;
-	stu_int32_t            n;
-
-	pc = (stu_connection_t *) ev->data;
-	u = pc->upstream;
-	s = u->server;
-
-	//stu_mutex_lock(&pc->lock);
-
-	stu_event_del(pc->write, STU_WRITE_EVENT, 0);
-
-	if (u == NULL || u->peer == NULL
-			|| u->peer->timedout || u->peer->close || u->peer->error || u->peer->destroyed) {
-		goto done;
-	}
-
-	if (u->generate_request_pt(pc) == STU_ERROR) {
-		stu_log_error(0, "Failed to generate request of http upstream %s, fd=%d.", s->name.data, pc->fd);
-		goto failed;
-	}
-
-	n = pc->send(pc, pc->buffer.pos, pc->buffer.last - pc->buffer.pos);
-	if (n == -1) {
-		pc->error = TRUE;
-		stu_log_error(stu_errno, "Failed to send http upstream request, u->fd=%d.", pc->fd);
-		goto failed;
-	}
-
-	stu_log_debug(4, "sent to http upstream %s: u->fd=%d, bytes=%d.", s->name.data, pc->fd, n);
-
-	goto done;
-
-failed:
-
-	stu_atomic_fetch_add(&s->fails, 1);
-	u->cleanup_pt(u->connection);
-
-done:
-
-	stu_log_debug(4, "http upstream request done.");
-
-	//stu_mutex_unlock(&pc->lock);
+	stu_event_del(ev, STU_WRITE_EVENT, 0);
+	stu_upstream_write_handler(ev);
 }
 
 stu_int32_t
@@ -184,11 +142,11 @@ stu_http_upstream_generate_request(stu_connection_t *pc) {
 
 	if (pc->buffer.start == NULL) {
 		pc->buffer.start = (u_char *) stu_pcalloc(pc->pool, STU_HTTP_REQUEST_DEFAULT_SIZE);
-		pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 		pc->buffer.end = pc->buffer.start + STU_HTTP_REQUEST_DEFAULT_SIZE;
 		pc->buffer.size = STU_HTTP_REQUEST_DEFAULT_SIZE;
 	}
-	pc->buffer.pos = pc->buffer.last;
+
+	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 
 	/* get method name */
 	method_name = NULL;
@@ -213,10 +171,10 @@ stu_http_upstream_generate_request(stu_connection_t *pc) {
 	pc->buffer.last = stu_sprintf(pc->buffer.last, "Accept-Charset: utf-8" CRLF);
 	pc->buffer.last = stu_sprintf(pc->buffer.last, "Accept-Language: zh-CN,zh;q=0.8" CRLF);
 	pc->buffer.last = stu_sprintf(pc->buffer.last, "Connection: keep-alive" CRLF);
-	if (u->server->method == STU_HTTP_POST && pr->request_body) {
+	if (u->server->method == STU_HTTP_POST && pr->request_body.size) {
 		pc->buffer.last = stu_sprintf(pc->buffer.last, "Content-Type: application/json" CRLF);
-		pc->buffer.last = stu_sprintf(pc->buffer.last, "Content-Length: %d" CRLF CRLF, pr->headers_out.content_length_n);
-		pc->buffer.last = stu_chain_read(pr->request_body->bufs, pc->buffer.last);
+		pc->buffer.last = stu_sprintf(pc->buffer.last, "Content-Length: %d" CRLF CRLF, pr->request_body.size);
+		pc->buffer.last = stu_memcpy(pc->buffer.last, pr->request_body.start, pr->request_body.size);
 	} else {
 		pc->buffer.last = stu_sprintf(pc->buffer.last, CRLF);
 	}
@@ -410,10 +368,25 @@ stu_http_upstream_process_response_headers(stu_event_t *ev) {
 
 			rc = stu_http_upstream_process_response_header(pr);
 			if (rc != STU_OK) {
+				stu_log_error(0, "http failed to process response header.");
 				return;
 			}
 
+			if (pr->headers_out.content_length_n) {
+				if (pr->headers_out.content_length_n > pr->header_in->last - pr->header_in->pos) {
+					stu_log_debug(4, "http content is still not complete.");
+					rc = STU_AGAIN;
+					continue;
+				} else {
+					pr->response_body.start = pr->header_in->pos;
+					pr->response_body.size = pr->headers_out.content_length_n;
+				}
+			}
+
 			pc->upstream->process_response_pt(pc);
+
+			pr->state = 0;
+			pr->header_in->pos += pr->headers_out.content_length_n;
 
 			if (pr->header_in->pos == pr->header_in->last) {
 				pr->header_in->pos = pr->header_in->last = pr->header_in->start;
@@ -574,7 +547,7 @@ static stu_int32_t
 stu_http_upstream_process_header_line(stu_http_request_t *pr, stu_table_elt_t *h, stu_uint32_t offset) {
 	stu_table_elt_t **ph;
 
-	ph = (stu_table_elt_t **) ((char *) &pr->headers_in + offset);
+	ph = (stu_table_elt_t **) ((char *) &pr->headers_out + offset);
 	if (*ph == NULL) {
 		*ph = h;
 	}
@@ -592,7 +565,7 @@ stu_http_upstream_process_unique_header_line(stu_http_request_t *pr, stu_table_e
 	c = pc->upstream->connection;
 	r = c->request;
 
-	ph = (stu_table_elt_t **) ((char *) &pr->headers_in + offset);
+	ph = (stu_table_elt_t **) ((char *) &pr->headers_out + offset);
 	if (*ph == NULL) {
 		*ph = h;
 		return STU_OK;
@@ -611,7 +584,7 @@ stu_http_upstream_process_content_length(stu_http_request_t *pr, stu_table_elt_t
 	stu_uint32_t  length;
 
 	length = atol((const char *) h->value.data);
-	pr->headers_in.content_length_n = length;
+	pr->headers_out.content_length_n = length;
 
 	return stu_http_upstream_process_unique_header_line(pr, h, offset);
 }
@@ -620,10 +593,10 @@ static stu_int32_t
 stu_http_upstream_process_connection(stu_http_request_t *pr, stu_table_elt_t *h, stu_uint32_t offset) {
 	stu_http_upstream_process_unique_header_line(pr, h, offset);
 
-	if (stu_strnstr(h->value.data, "close", 5)) {
-		pr->headers_in.connection_type = STU_HTTP_CONNECTION_CLOSE;
-	} else if (stu_strnstr(h->value.data, "keep-alive", 10)) {
-		pr->headers_in.connection_type = STU_HTTP_CONNECTION_KEEP_ALIVE;
+	if (stu_strncasestr(h->value.data, "close", 5)) {
+		pr->headers_out.connection_type = STU_HTTP_CONNECTION_CLOSE;
+	} else if (stu_strncasestr(h->value.data, "keep-alive", 10)) {
+		pr->headers_out.connection_type = STU_HTTP_CONNECTION_KEEP_ALIVE;
 	}
 
 	return STU_OK;

@@ -132,11 +132,6 @@ void
 stu_connection_close(stu_connection_t *c) {
 	stu_socket_t  fd;
 
-	if (c->fd == (stu_socket_t) STU_SOCKET_INVALID) {
-		stu_log_error(0, "connection already closed.");
-		return;
-	}
-
 	/*if (c->read->timer_set) {
 		stu_del_timer(c->read);
 	}
@@ -145,18 +140,25 @@ stu_connection_close(stu_connection_t *c) {
 		stu_del_timer(c->write);
 	}*/
 
-	stu_event_del(c->read, STU_READ_EVENT, STU_CLOSE_EVENT);
-	stu_event_del(c->write, STU_WRITE_EVENT, STU_CLOSE_EVENT);
-
-	fd = c->fd;
-
-	c->fd = (stu_socket_t) STU_SOCKET_INVALID;
-	c->close = TRUE;
-	stu_socket_close(fd);
-
 	stu_upstream_cleanup(c);
 
-	stu_log_debug(3, "freed connection: c=%p, fd=%d.", c, fd);
+	if (c->fd != STU_SOCKET_INVALID) {
+		stu_event_del(c->read, STU_READ_EVENT, STU_CLOSE_EVENT);
+		stu_event_del(c->write, STU_WRITE_EVENT, STU_CLOSE_EVENT);
+
+		fd = c->fd;
+
+		c->fd = (stu_socket_t) STU_SOCKET_INVALID;
+		c->close = TRUE;
+
+		stu_socket_close(fd);
+
+		stu_log_debug(3, "freed connection: c=%p, fd=%d.", c, fd);
+	}
+
+	if (c->destroyed) {
+		return;
+	}
 
 	c->destroyed = TRUE;
 

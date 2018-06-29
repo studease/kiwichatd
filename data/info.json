@@ -1,0 +1,13 @@
+﻿{
+	"status":   true,
+	"user": {
+		"id":   "1",
+		"name": "tony",
+		"icon": "/images/icon/tony.png",
+		"role":  1
+	},
+	"channel": {
+		"id":   "001",
+		"state": 0
+	}
+}

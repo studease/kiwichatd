@@ -101,7 +101,7 @@ stu_upstream_write_handler(stu_event_t *ev) {
 	u = pc->upstream;
 	s = u->server;
 
-	stu_mutex_lock(&pc->lock);
+	//stu_mutex_lock(&pc->lock);
 
 	if (u == NULL || u->peer == NULL
 			|| u->peer->timedout || u->peer->close || u->peer->error || u->peer->destroyed) {
@@ -120,9 +120,12 @@ stu_upstream_write_handler(stu_event_t *ev) {
 		goto failed;
 	}
 
-	stu_log_debug(4, "sent to upstream %s: u->fd=%d, bytes=%d.", s->name.data, pc->fd, n);
+	u->request_sent = TRUE;
+	pc->buffer.pos = pc->buffer.last = pc->buffer.start;
 
 	stu_event_del(pc->write, STU_WRITE_EVENT, 0);
+
+	stu_log_debug(4, "sent to upstream %s: u->fd=%d, bytes=%d.", s->name.data, pc->fd, n);
 
 	goto done;
 
@@ -133,7 +136,9 @@ failed:
 
 done:
 
-	stu_mutex_unlock(&pc->lock);
+	stu_log_debug(4, "upstream request done.");
+
+	//stu_mutex_unlock(&pc->lock);
 }
 
 
@@ -199,7 +204,7 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 
 	pc = u->peer;
 	if (pc == NULL) {
-		pc = stu_connection_get(STU_SOCKET_INVALID);
+		pc = stu_connection_get((stu_socket_t) STU_SOCKET_INVALID);
 		if (pc == NULL) {
 			stu_log_error(0, "Failed to get connection for upstream %s, fd=%d.", s->name.data, c->fd);
 			return STU_ERROR;
@@ -220,7 +225,7 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 
 	if (pc->fd == STU_SOCKET_INVALID) {
 		fd = stu_socket(s->addr.sockaddr.sin_family, SOCK_STREAM, 0);
-		if (fd == (stu_socket_t) STU_SOCKET_INVALID) {
+		if (fd == STU_SOCKET_INVALID) {
 			stu_log_error(stu_errno, "Failed to create socket for upstream %s, fd=%d.", s->name.data, c->fd);
 			return STU_ERROR;
 		}
@@ -233,6 +238,8 @@ stu_upstream_init(stu_connection_t *c, stu_upstream_server_t *s) {
 		pc->fd = fd;
 		pc->read->evfd = c->read->evfd;
 		pc->write->evfd = c->write->evfd;
+		pc->recv = c->recv;
+		pc->send = c->send;
 
 		if (stu_event_add_conn(pc) == STU_ERROR) {
 			stu_log_error(0, "Failed to add read event of upstream %s, fd=%d.", s->name.data, c->fd);
@@ -248,8 +255,6 @@ stu_upstream_connect(stu_connection_t *pc) {
 	stu_connection_t      *c;
 	stu_upstream_t        *u;
 	stu_upstream_server_t *s;
-	int                    rc;
-	stu_err_t              err;
 
 	u = pc->upstream;
 	s = u->server;
@@ -258,36 +263,8 @@ stu_upstream_connect(stu_connection_t *pc) {
 	pc->read->handler = u->read_event_handler;
 	pc->write->handler = u->write_event_handler;
 
-	rc = connect(pc->fd, (const struct sockaddr *) &s->addr.sockaddr, s->addr.socklen);
-	if (rc == -1) {
-		err = stu_errno;
-		if (err != STU_EINPROGRESS
-#if (STU_WIN32)
-				/* Winsock returns WSAEWOULDBLOCK (STU_EAGAIN) */
-				&& err != STU_EAGAIN
-#endif
-				) {
-			if (err == STU_ECONNREFUSED
-#if (STU_LINUX)
-					/*
-					 * Linux returns EAGAIN instead of ECONNREFUSED
-					 * for unix sockets if listen queue is full
-					 */
-					|| err == STU_EAGAIN
-#endif
-					|| err == STU_ECONNRESET
-					|| err == STU_ENETDOWN
-					|| err == STU_ENETUNREACH
-					|| err == STU_EHOSTDOWN
-					|| err == STU_EHOSTUNREACH) {
-
-			} else {
-
-			}
-			stu_log_error(err, "Failed to connect to upstream %s, fd=%d.", s->name.data, pc->fd);
-
-			return stu_upstream_next(c);
-		}
+	if (stu_connect(pc, &s->addr) == STU_DECLINED) {
+		return stu_upstream_next(c);
 	}
 
 	pc->idle = FALSE;

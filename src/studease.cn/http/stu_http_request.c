@@ -356,11 +356,24 @@ stu_http_process_request_headers(stu_event_t *ev) {
 			rc = stu_http_process_request_header(r);
 			if (rc != STU_OK) {
 				stu_log_error(0, "http failed to process request header.");
-				stu_http_finalize_request(r, STU_HTTP_BAD_REQUEST);
 				return;
 			}
 
+			if (r->headers_in.content_length_n) {
+				if (r->headers_in.content_length_n > r->header_in->last - r->header_in->pos) {
+					stu_log_debug(4, "http content is still not complete.");
+					rc = STU_AGAIN;
+					continue;
+				} else {
+					r->request_body.start = r->header_in->pos;
+					r->request_body.size = r->headers_in.content_length_n;
+				}
+			}
+
 			stu_http_process_request(r);
+
+			r->state = 0;
+			r->header_in->pos += r->headers_in.content_length_n;
 
 			if (r->header_in->pos == r->header_in->last) {
 				r->header_in->pos = r->header_in->last = r->header_in->start;

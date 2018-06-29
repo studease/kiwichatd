@@ -7,7 +7,7 @@
 
 #include "kcd_core.h"
 
-stu_fd_t  kcd_epfd;
+stu_fd_t  kcd_evfd;
 
 extern volatile kcd_cycle_t *kcd_cycle;
 
@@ -76,8 +76,8 @@ void
 kcd_process_worker_cycle(stu_int32_t threads, void *data) {
 	stu_int32_t  n, err;
 
-	kcd_epfd = stu_event_create();
-	if (kcd_epfd == -1) {
+	kcd_evfd = stu_event_create();
+	if (kcd_evfd == -1) {
 		stu_log_error(0, "Failed to create worker event.");
 		exit(2);
 	}
@@ -101,7 +101,7 @@ kcd_process_worker_cycle(stu_int32_t threads, void *data) {
 			exit(2);
 		}
 
-		if (stu_thread_create(&stu_threads[n].id, &stu_threads[n].epfd, kcd_process_worker_thread_cycle, (void *) &stu_threads[n]) == STU_ERROR) {
+		if (stu_thread_create(&stu_threads[n].id, &stu_threads[n].evfd, kcd_process_worker_thread_cycle, (void *) &stu_threads[n]) == STU_ERROR) {
 			stu_log_error(0, "Failed to create thread[%d].", n);
 			exit(2);
 		}
@@ -120,7 +120,7 @@ kcd_process_worker_cycle(stu_int32_t threads, void *data) {
 	}
 
 	// listen
-	if (stu_http_listen(kcd_epfd, kcd_cycle->conf.port) == STU_ERROR) {
+	if (stu_http_listen(kcd_evfd, kcd_cycle->conf.port) == STU_ERROR) {
 		stu_log_error(0, "Failed to add http listen: port=\"%d\".", kcd_cycle->conf.port);
 		exit(2);
 	}
@@ -131,15 +131,15 @@ kcd_process_worker_cycle(stu_int32_t threads, void *data) {
 			// TODO: remove timers, free memory
 		}
 
-		stu_event_process_events_and_timers(kcd_epfd);
+		stu_event_process_events_and_timers(kcd_evfd);
+
+		if (stu_reopen) {
+			stu_log("reopening logs...");
+		}
 
 		if (stu_quit) {
 			stu_log("worker process shutting down...");
 			break;
-		}
-
-		if (stu_reopen) {
-			stu_log("reopening logs...");
 		}
 	}
 }
@@ -177,7 +177,7 @@ kcd_process_worker_init() {
 		stu_log_error(stu_errno, "close() channel failed");
 	}
 
-	if (stu_channel_add_event(kcd_epfd, stu_channel, STU_READ_EVENT, kcd_process_channel_handler) == STU_ERROR) {
+	if (stu_channel_add_event(kcd_evfd, stu_channel, STU_READ_EVENT, kcd_process_channel_handler) == STU_ERROR) {
 		/* fatal */
 		exit(2);
 	}
@@ -258,7 +258,7 @@ kcd_process_worker_thread_cycle(void *data) {
 	}
 
 	for ( ;; ) {
-		stu_event_process_events_and_timers(thr->epfd);
+		stu_event_process_events_and_timers(thr->evfd);
 	}
 
 	stu_log_error(0, "worker thread exit.");

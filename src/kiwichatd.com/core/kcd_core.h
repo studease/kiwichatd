@@ -11,14 +11,9 @@
 #include "../../studease.cn/websocket/stu_websocket.h"
 
 typedef enum {
-	PREVIEW    = 0x00,
-	ENTERPRISE = 0x01
+	PREVIEW      = 0x00,
+	ENTERPRISE   = 0x01
 } kcd_edition_t;
-
-typedef struct {
-	stu_str_t      name;
-	kcd_edition_t  mask;
-} kcd_edition_mask_t;
 
 typedef struct {
 	stu_str_t      name;
@@ -28,6 +23,7 @@ typedef struct {
 typedef struct kcd_channel_s kcd_channel_t;
 
 #include "kcd_conf.h"
+#include "kcd_license.h"
 #include "kcd_protocol.h"
 #include "kcd_user.h"
 #include "kcd_channel.h"
